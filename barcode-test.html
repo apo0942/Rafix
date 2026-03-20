@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Barkod Test</title>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:system-ui,sans-serif;background:#f5f2eb;padding:1.5rem;max-width:500px;margin:0 auto}
+h1{font-size:22px;margin-bottom:1rem;color:#1a1712}
+#reader{border-radius:12px;overflow:hidden;margin-bottom:1rem}
+#result{padding:1rem;background:#fff;border-radius:12px;border:1.5px solid #e0ddd5;min-height:60px;font-size:15px;color:#1a1712}
+#product-info{padding:1rem;background:#eaf4ee;border-radius:12px;border:1.5px solid #c4dfc9;margin-top:10px;display:none;font-size:14px;line-height:1.6}
+button{width:100%;padding:12px;background:#c85a2a;color:#fff;border:none;border-radius:40px;font-size:15px;font-weight:600;cursor:pointer;margin-top:10px}
+button.stop{background:#7a7570}
+</style>
+</head>
+<body>
+<h1>📷 Barkod Tarayıcı Test</h1>
+
+<div id="reader"></div>
+<div id="result">Kamera başlatılıyor…</div>
+<div id="product-info"></div>
+
+<button id="start-btn" onclick="startScanner()">Taramayı Başlat</button>
+<button id="stop-btn" class="stop" onclick="stopScanner()" style="display:none">Durdur</button>
+
+<script>
+let scanner = null;
+
+async function startScanner() {
+  document.getElementById('start-btn').style.display = 'none';
+  document.getElementById('stop-btn').style.display = 'block';
+  document.getElementById('result').textContent = 'Kamera açılıyor…';
+
+  scanner = new Html5Qrcode("reader");
+
+  try {
+    await scanner.start(
+      { facingMode: "environment" },
+      {
+        fps: 10,
+        qrbox: { width: 280, height: 120 },
+        formatsToSupport: [
+          Html5QrcodeSupportedFormats.EAN_13,
+          Html5QrcodeSupportedFormats.EAN_8,
+          Html5QrcodeSupportedFormats.UPC_A,
+          Html5QrcodeSupportedFormats.CODE_128,
+          Html5QrcodeSupportedFormats.CODE_39,
+          Html5QrcodeSupportedFormats.ITF,
+        ]
+      },
+      onScanSuccess,
+      onScanFailure
+    );
+    document.getElementById('result').textContent = '📷 Barkodu çerçeve içine hizalayın…';
+  } catch(e) {
+    document.getElementById('result').textContent = '❌ Kamera hatası: ' + e;
+    document.getElementById('start-btn').style.display = 'block';
+    document.getElementById('stop-btn').style.display = 'none';
+  }
+}
+
+async function onScanSuccess(code) {
+  document.getElementById('result').textContent = '✅ Barkod: ' + code;
+  await stopScanner();
+  await lookupProduct(code);
+}
+
+function onScanFailure() {
+  // sessizce devam et
+}
+
+async function stopScanner() {
+  if (scanner) {
+    try { await scanner.stop(); } catch(e) {}
+    scanner = null;
+  }
+  document.getElementById('start-btn').style.display = 'block';
+  document.getElementById('stop-btn').style.display = 'none';
+}
+
+async function lookupProduct(code) {
+  const info = document.getElementById('product-info');
+  info.style.display = 'block';
+  info.textContent = '🔍 Ürün aranıyor…';
+  try {
+    const res = await fetch(`https://world.openfoodfacts.org/api/v0/product/${code}.json`);
+    const data = await res.json();
+    if (data.status === 1) {
+      const p = data.product;
+      const name  = p.product_name_tr || p.product_name || 'Ad bulunamadı';
+      const brand = p.brands || '—';
+      info.innerHTML = `<strong>${name}</strong><br>Marka: ${brand}<br>Barkod: ${code}`;
+    } else {
+      info.textContent = '⚠️ Barkod veritabanında bulunamadı: ' + code;
+    }
+  } catch(e) {
+    info.textContent = '❌ Ürün aranamadı.';
+  }
+}
+</script>
+</body>
+</html>
