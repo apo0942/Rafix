@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-<title>Kırp & Oku v3</title>
+<title>Kırp & Oku v4</title>
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <style>
@@ -25,12 +25,12 @@ input[type=file]{display:none}
 #crop-canvas{display:block;width:100%;border-radius:12px;border:1.5px solid #e0ddd5;touch-action:none}
 #crop-box{position:absolute;border:2.5px solid #c85a2a;background:rgba(200,90,42,0.1);pointer-events:none;display:none}
 progress{width:100%;height:6px;border-radius:10px;display:none;margin-bottom:10px;accent-color:#c85a2a}
-#preview-strip{display:flex;flex-direction:column;gap:4px;margin-bottom:8px}
-#preview-strip img{max-width:200px;border-radius:4px;border:1px solid #e0ddd5;background:#fff}
+#preview-strip{display:flex;gap:4px;margin-bottom:8px;overflow-x:auto}
+#preview-strip img{height:60px;border-radius:4px;border:1px solid #e0ddd5;background:#fff}
 </style>
 </head>
 <body>
-<h1>✂️ Kırp & Oku v3</h1>
+<h1>✂️ Kırp & Oku v4</h1>
 <div class="tabs">
   <button class="tab active" onclick="setMode('barcode',this)">📷 Barkod</button>
   <button class="tab" onclick="setMode('skt',this)">📅 SKT</button>
@@ -87,11 +87,10 @@ async function handleFile(event) {
       canvas.width  = origImage.width  * imgScale;
       canvas.height = origImage.height * imgScale;
       canvas.getContext('2d').drawImage(origImage, 0, 0, canvas.width, canvas.height);
-      document.getElementById('crop-hint').textContent = mode === 'barcode' ? '👆 Barkodu seç' : '👆 Tarihi dar bir kutu içine al';
+      document.getElementById('crop-hint').textContent = '👆 Sadece tarih rakamlarını kutu içine al';
       document.getElementById('crop-wrap').style.display = 'block';
-      document.getElementById('result').textContent = 'Alanı seçin ve butona basın';
+      document.getElementById('result').textContent = 'Alanı seçip butona basın';
       document.getElementById('found').style.display = 'none';
-      document.getElementById('preview-strip').innerHTML = '';
       addListeners();
     };
     origImage.src = e.target.result;
@@ -134,113 +133,103 @@ async function doCrop() {
   if(!cropStart||!cropEnd||!origImage) return;
   const x=Math.min(cropStart.x,cropEnd.x)/imgScale, y=Math.min(cropStart.y,cropEnd.y)/imgScale;
   const w=Math.abs(cropEnd.x-cropStart.x)/imgScale, h=Math.abs(cropEnd.y-cropStart.y)/imgScale;
-  if(w<10||h<5) return;
   if(mode==='barcode') await readBarcode(x,y,w,h); else await readSKT(x,y,w,h);
 }
 
 async function readBarcode(x,y,w,h) {
-  document.getElementById('result').textContent='🔍 Barkod taranıyor...';
-  const angles=[0,90,180,270];
-  for(const angle of angles){
-    const canvas=prepareImage(x,y,w,h,angle,false);
-    const code = await new Promise(res => {
-      canvas.toBlob(blob => {
-        const scanner = new Html5Qrcode('__scan_tmp__');
-        scanner.scanFile(new File([blob], 'c.jpg'), false).then(res).catch(()=>res(null));
-      }, 'image/jpeg', 0.9);
-    });
-    if(code){
-      document.getElementById('result').textContent=`✅ Barkod: ${code}`;
-      await lookupProduct(code); return;
-    }
-  }
-  document.getElementById('result').textContent='⚠️ Okunamadı.';
+  document.getElementById('result').textContent='🔍 Barkod aranıyor...';
+  const canvas=prepareImage(x,y,w,h,false);
+  canvas.toBlob(blob => {
+    const scanner = new Html5Qrcode('__scan_tmp__');
+    scanner.scanFile(new File([blob], 'c.jpg'), false)
+      .then(code => {
+        document.getElementById('result').textContent=`✅ Barkod: ${code}`;
+        lookupProduct(code);
+      })
+      .catch(()=> document.getElementById('result').textContent='⚠️ Barkod okunamadı.');
+  }, 'image/jpeg', 0.9);
 }
 
 async function readSKT(x,y,w,h) {
-  document.getElementById('result').textContent='⏳ OCR İşleniyor...';
+  document.getElementById('result').textContent='⏳ İşleniyor...';
   document.getElementById('progress').style.display='block';
-  document.getElementById('found').style.display='none';
-
-  const canvas = prepareImage(x,y,w,h,0,true);
+  
+  // Görüntüyü temizleyerek al
+  const canvas = prepareImage(x,y,w,h,true);
   const imgPreview = document.createElement('img');
   imgPreview.src = canvas.toDataURL();
-  document.getElementById('preview-strip').innerHTML = '<span>İşlenen Görüntü:</span>';
+  document.getElementById('preview-strip').innerHTML = '<span>Önizleme (Temizlenmiş):</span>';
   document.getElementById('preview-strip').appendChild(imgPreview);
 
   try {
     const worker = await Tesseract.createWorker('eng');
-
     await worker.setParameters({
       tessedit_char_whitelist: '0123456789./-:',
-      tessedit_pageseg_mode: '6', // Single uniform block of text
+      tessedit_pageseg_mode: '7', 
     });
 
     const { data: { text } } = await worker.recognize(canvas);
     await worker.terminate();
 
-    const cleanedText = text.replace(/[^0-9./-]/g, '').trim();
-    document.getElementById('result').textContent = 'Okunan: ' + (cleanedText || "Metin yok");
+    const clean = text.replace(/[^0-9./-]/g, '').trim();
+    document.getElementById('result').textContent = 'Okunan: ' + (clean || "Rakam bulunamadı");
 
-    const date = extractDate(cleanedText);
+    const date = extractDate(clean);
     const el = document.getElementById('found');
     el.style.display = 'block';
     if(date){
       el.style.background='#eaf4ee'; el.style.color='#2e7d52';
-      el.textContent='✅ SKT: '+date;
+      el.textContent='✅ Bulunan SKT: '+date;
     } else {
       el.style.background='#faecec'; el.style.color='#b52b2b';
-      el.textContent='⚠️ Tarih formatı anlaşılamadı.\nLütfen sadece rakamları içeren dar bir alan seçin.';
+      el.textContent='⚠️ Tarih ayrıştırılamadı. Kırpma alanını daraltın.';
     }
   } catch(e) { document.getElementById('result').textContent='❌ Hata: '+e.message; }
   document.getElementById('progress').style.display='none';
 }
 
-function prepareImage(x,y,w,h,angle,sktMode){
-  const factor = 3; 
-  const tmp = document.createElement('canvas');
-  tmp.width = w; tmp.height = h;
-  tmp.getContext('2d').drawImage(origImage, x,y,w,h, 0,0,w,h);
-  
+function prepareImage(x,y,w,h,sktMode){
+  const factor = 4; // Büyütme oranı
   const out = document.createElement('canvas');
   out.width = w * factor;
   out.height = h * factor;
   const ctx = out.getContext('2d');
   
-  // Keskinlik ve Kontrast İyileştirme
-  ctx.filter = sktMode ? 'grayscale(1) contrast(200%) brightness(120%)' : 'none';
-  ctx.drawImage(tmp, 0, 0, out.width, out.height);
+  // 1. Resmi Büyüt
+  ctx.drawImage(origImage, x,y,w,h, 0,0,out.width,out.height);
   
+  if(sktMode) {
+    const id = ctx.getImageData(0,0,out.width,out.height), d = id.data;
+    // 2. Grayscale & Contrast
+    for(let i=0; i<d.length; i+=4){
+      let v = 0.299*d[i] + 0.587*d[i+1] + 0.114*d[i+2];
+      // Kontrastı artır (Rakamları koyulaştır)
+      v = (v - 100) * 2.5; 
+      d[i]=d[i+1]=d[i+2]=v < 128 ? 0 : 255; // Basit Threshold yerine Keskin geçiş
+    }
+    ctx.putImageData(id,0,0);
+  }
   return out;
 }
 
 function extractDate(t){
-  // 06.11.27 gibi formatlar için daha hassas Regex
-  const patterns=[
-    /(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})/,
-    /(\d{2})(\d{2})(\d{2,4})/
-  ];
-  for(const pat of patterns){
-    const m = t.match(pat); if(!m) continue;
-    let d=parseInt(m[1]), month=parseInt(m[2]), y=m[3];
+  // 06.11.27 formatı için özel kontrol
+  const m = t.match(/(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})/);
+  if(m){
+    let d=m[1], month=m[2], y=m[3];
     if(y.length===2) y = "20" + y;
-    
-    // Geçerlilik kontrolü
-    if(month > 12 && d <= 12) [d, month] = [month, d];
-    if(month > 0 && month <= 12 && d > 0 && d <= 31){
-       return `${y}-${String(month).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
-    }
+    if(parseInt(month)>12 && parseInt(d)<=12) [d, month] = [month, d];
+    return `${y}-${month.padStart(2,'0')}-${d.padStart(2,'0')}`;
   }
   return null;
 }
 
 async function lookupProduct(code){
   const el=document.getElementById('found'); el.style.display='block';
-  try {
-    const res=await fetch(`https://world.openfoodfacts.org/api/v0/product/${code}.json`);
-    const d=await res.json();
-    if(d.status===1) el.textContent=`✅ ${d.product.product_name || 'Ürün bulundu'}`;
-  } catch { el.textContent=`✅ Barkod: ${code}`; }
+  fetch(`https://world.openfoodfacts.org/api/v0/product/${code}.json`)
+    .then(r=>r.json()).then(d=>{
+      if(d.status===1) el.textContent=`✅ ${d.product.product_name || 'Ürün bulundu'}`;
+    }).catch(()=>{});
 }
 </script>
 <div id="__scan_tmp__" style="display:none"></div>
