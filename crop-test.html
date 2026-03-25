@@ -3,49 +3,50 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-<title>Global Tarih Okuyucu v7</title>
+<title>Kırp & Oku v6 - Akıllı Eşikleme</title>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:system-ui,sans-serif;background:#f4f4f9;padding:1rem;max-width:500px;margin:0 auto}
-.card{background:#fff;padding:1.2rem;border-radius:20px;box-shadow:0 4px 12px rgba(0,0,0,0.08);margin-bottom:1rem}
-h1{font-size:18px;margin-bottom:1rem;text-align:center;color:#333}
-#crop-container{position:relative;width:100%;background:#eee;border-radius:12px;overflow:hidden;touch-action:none}
+body{font-family:system-ui,sans-serif;background:#f0f2f5;padding:1rem;max-width:500px;margin:0 auto}
+.card{background:#fff;padding:1rem;border-radius:16px;box-shadow:0 2px 8px rgba(0,0,0,0.1);margin-bottom:1rem}
+h1{font-size:18px;margin-bottom:1rem;text-align:center}
+#crop-container{position:relative;width:100%;background:#000;border-radius:12px;overflow:hidden;touch-action:none}
 #crop-canvas{display:block;width:100%}
-#crop-box{position:absolute;border:2px solid #ff4400;background:rgba(255,68,0,0.15);display:none;pointer-events:none}
-.btn{display:block;width:100%;padding:14px;background:#007bff;color:#fff;border:none;border-radius:12px;font-size:16px;font-weight:600;cursor:pointer;margin-top:10px;text-align:center}
+#crop-box{position:absolute;border:2px solid #00ff00;background:rgba(0,255,0,0.1);display:none;pointer-events:none}
+.btn{display:block;width:100%;padding:14px;background:#007bff;color:#fff;border:none;border-radius:12px;font-size:16px;font-weight:600;cursor:pointer;margin-top:10px}
 .btn-scan{background:#28a745}
-#preview-area{margin-top:10px;text-align:center;font-size:12px;color:#666}
-#preview-area img{max-width:100%;border:1px solid #ddd;border-radius:8px;margin-top:5px;background:#fff}
-#result-box{margin-top:10px;padding:15px;border-radius:12px;display:none;font-weight:600;text-align:center;line-height:1.5}
-.success{background:#e8f5e9;color:#2e7d32;border:1px solid #c8e6c9}
-.error{background:#ffebee;color:#c62828;border:1px solid #ffcdd2}
-progress{width:100%;margin-top:10px;height:8px;accent-color:#28a745;display:none}
+#preview-area{margin-top:10px;text-align:center}
+#preview-area img{max-width:100%;border:2px solid #ddd;border-radius:8px;background:#f8f9fa}
+#result-box{margin-top:10px;padding:12px;border-radius:12px;min-height:50px;font-weight:600;text-align:center}
+.success{background:#d4edda;color:#155724}.error{background:#f8d7da;color:#721c24}
+progress{width:100%;margin-top:10px;display:none}
 </style>
 </head>
 <body>
 
 <div class="card">
-  <h1>📅 Global Tarih Okuyucu v7</h1>
+  <h1>📷 SKT Okuyucu v6</h1>
   <input type="file" id="file-input" accept="image/*" onchange="handleFile(event)" style="display:none">
-  <button class="btn" onclick="document.getElementById('file-input').click()">📷 Fotoğraf Çek / Seç</button>
+  <button class="btn" onclick="document.getElementById('file-input').click()">Fotoğraf Seç / Çek</button>
 
   <div id="crop-wrapper" style="display:none;margin-top:15px">
     <div id="crop-container">
       <canvas id="crop-canvas"></canvas>
       <div id="crop-box"></div>
     </div>
-    <button class="btn btn-scan" onclick="processImage()">🔍 Tarihi Çöz</button>
+    <button class="btn btn-scan" onclick="processImage()">✂️ Kırp ve Analiz Et</button>
   </div>
 </div>
 
 <progress id="progress" max="100" value="0"></progress>
+
 <div id="preview-area"></div>
-<div id="result-box"></div>
+<div id="result-box" style="display:none"></div>
 
 <script>
 let origImg = null;
-let startX, startY, isDrawing = false, cropScale = 1;
+let startX, startY, isDrawing = false;
+let scale = 1;
 
 function handleFile(e) {
   const file = e.target.files[0];
@@ -56,12 +57,11 @@ function handleFile(e) {
     origImg.onload = () => {
       const canvas = document.getElementById('crop-canvas');
       const containerW = document.getElementById('crop-container').clientWidth;
-      cropScale = containerW / origImg.width;
+      scale = containerW / origImg.width;
       canvas.width = containerW;
-      canvas.height = origImg.height * cropScale;
+      canvas.height = origImg.height * scale;
       canvas.getContext('2d').drawImage(origImg, 0, 0, canvas.width, canvas.height);
       document.getElementById('crop-wrapper').style.display = 'block';
-      document.getElementById('result-box').style.display = 'none';
       initCrop();
     };
     origImg.src = event.target.result;
@@ -72,38 +72,48 @@ function handleFile(e) {
 function initCrop() {
   const container = document.getElementById('crop-container');
   const box = document.getElementById('crop-box');
-  const getP = (e) => {
-    const r = container.getBoundingClientRect();
+  
+  const getPos = (e) => {
+    const rect = container.getBoundingClientRect();
     const ev = e.touches ? e.touches[0] : e;
-    return { x: ev.clientX - r.left, y: ev.clientY - r.top };
+    return { x: ev.clientX - rect.left, y: ev.clientY - rect.top };
   };
+
   container.onmousedown = container.ontouchstart = (e) => {
-    isDrawing = true; const p = getP(e); startX = p.x; startY = p.y;
+    isDrawing = true;
+    const pos = getPos(e);
+    startX = pos.x; startY = pos.y;
     box.style.display = 'block';
   };
+
   window.onmousemove = window.ontouchmove = (e) => {
-    if(!isDrawing) return; const p = getP(e);
-    box.style.left = Math.min(startX, p.x) + 'px'; box.style.top = Math.min(startY, p.y) + 'px';
-    box.style.width = Math.abs(p.x - startX) + 'px'; box.style.height = Math.abs(p.y - startY) + 'px';
+    if(!isDrawing) return;
+    const pos = getPos(e);
+    box.style.left = Math.min(startX, pos.x) + 'px';
+    box.style.top = Math.min(startY, pos.y) + 'px';
+    box.style.width = Math.abs(pos.x - startX) + 'px';
+    box.style.height = Math.abs(pos.y - startY) + 'px';
   };
+
   window.onmouseup = window.ontouchend = () => isDrawing = false;
 }
 
 async function processImage() {
   const box = document.getElementById('crop-box');
-  if(!box.style.width || parseInt(box.style.width) < 10) return alert("Lütfen tarih alanını seçin");
-
+  const resultBox = document.getElementById('result-box');
   const prog = document.getElementById('progress');
-  const resBox = document.getElementById('result-box');
+  
+  const x = parseInt(box.style.left) / scale;
+  const y = parseInt(box.style.top) / scale;
+  const w = parseInt(box.style.width) / scale;
+  const h = parseInt(box.style.height) / scale;
+
+  if(w < 20) return alert("Lütfen daha geniş bir alan seçin");
+
   prog.style.display = 'block';
-  resBox.style.display = 'none';
+  resultBox.style.display = 'none';
 
-  const x = parseInt(box.style.left) / cropScale;
-  const y = parseInt(box.style.top) / cropScale;
-  const w = parseInt(box.style.width) / cropScale;
-  const h = parseInt(box.style.height) / cropScale;
-
-  // Görüntü İşleme: Dinamik Adaptif Eşikleme
+  // --- AKILLI GÖRÜNTÜ İŞLEME ---
   const canvas = document.createElement('canvas');
   canvas.width = w * 4; canvas.height = h * 4;
   const ctx = canvas.getContext('2d');
@@ -112,72 +122,54 @@ async function processImage() {
   const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
   const data = imgData.data;
 
-  // Lokal Parlaklık Analizi (Gürültü Silme)
-  for (let i = 0; i < data.length; i += 4) {
-    const avg = (data[i] + data[i+1] + data[i+2]) / 3;
-    // Eğer çok açık renkse (yeşil yaprak veya beyaz fon), tam beyaz yap
-    if (avg > 160) { data[i] = data[i+1] = data[i+2] = 255; }
-    // Eğer koyuysa daha da koyulaştır
-    else if (avg < 100) { data[i] = data[i+1] = data[i+2] = 0; }
-    else { data[i] = data[i+1] = data[i+2] = avg; }
+  // 1. Adım: Ortalama Parlaklığı Bul (Dinamik Eşikleme için)
+  let totalBrightness = 0;
+  for(let i=0; i<data.length; i+=4) {
+    totalBrightness += (data[i] + data[i+1] + data[i+2]) / 3;
+  }
+  const avg = totalBrightness / (data.length / 4);
+  const threshold = avg * 0.85; // Ortalamanın %85'inden koyu olanları siyah yap (Yeşilleri eler)
+
+  // 2. Adım: Filtrele
+  for(let i=0; i<data.length; i+=4) {
+    const brightness = (data[i] + data[i+1] + data[i+2]) / 3;
+    const val = brightness < threshold ? 0 : 255; 
+    data[i] = data[i+1] = data[i+2] = val;
   }
   ctx.putImageData(imgData, 0, 0);
 
-  document.getElementById('preview-area').innerHTML = 'İşlenen Görüntü:<br><img src="'+canvas.toDataURL()+'">';
+  // Önizlemeyi göster
+  const previewArea = document.getElementById('preview-area');
+  previewArea.innerHTML = '<b>İşlenen Görüntü:</b><br>';
+  const img = new Image();
+  img.src = canvas.toDataURL();
+  previewArea.appendChild(img);
 
   try {
     const worker = await Tesseract.createWorker('eng');
     await worker.setParameters({
-      tessedit_char_whitelist: '0123456789./-JANFEBMARAPRMAYJUNJULAUGSEPOCTNOVDEC ',
-      tessedit_pageseg_mode: '6' 
+      tessedit_char_whitelist: '0123456789./-',
+      tessedit_pageseg_mode: '7',
     });
 
     const { data: { text } } = await worker.recognize(canvas);
     await worker.terminate();
 
-    const result = analyzeText(text);
-    resBox.style.display = 'block';
-    if(result.success) {
-      resBox.className = 'card success';
-      resBox.innerHTML = `✅ Tarih: ${result.date}<br><small>Okunan: ${text.trim()}</small>`;
+    const cleanText = text.replace(/[^0-9./-]/g, '').trim();
+    resultBox.style.display = 'block';
+    
+    if(cleanText.length >= 6) {
+      resultBox.className = 'card success';
+      resultBox.innerHTML = `Okunan: ${cleanText}<br>Tarih Başarılı!`;
     } else {
-      resBox.className = 'card error';
-      resBox.innerHTML = `⚠️ Anlaşılamadı: ${text.trim() || 'Boş'}<br><small>Lütfen alanı daha dar seçin.</small>`;
+      resultBox.className = 'card error';
+      resultBox.textContent = `Okunamadı: ${cleanText || 'Metin yok'}. Lütfen sadece rakamları içeren çok dar bir alan seçin.`;
     }
-  } catch(e) { alert("Hata: " + e.message); }
-  prog.style.display = 'none';
-}
-
-function analyzeText(raw) {
-  const t = raw.toUpperCase().replace(/\s+/g, '');
-  const months = ["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"];
-  
-  // 1. Standart Formatlar (DD.MM.YYYY, DD/MM/YY vb.)
-  const std = t.match(/(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})/);
-  if(std) return { success: true, date: formatDate(std[1], std[2], std[3]) };
-
-  // 2. Ay ve Yıl (12.2029 gibi)
-  const my = t.match(/(\d{1,2})[./-](\d{4})/);
-  if(my) return { success: true, date: `01.${my[1].padStart(2,'0')}.${my[2]} (Ay/Yıl)` };
-
-  // 3. Yazılı Ay (06/MAY/2026 gibi)
-  for(let i=0; i<months.length; i++) {
-    if(t.includes(months[i])) {
-      const parts = t.match(new RegExp(`(\\d{1,2})?.?${months[i]}.?(\\d{2,4})`));
-      if(parts) return { success: true, date: `${parts[1]||'01'}.${String(i+1).padStart(2,'0')}.${parts[2].length==2?'20'+parts[2]:parts[2]}` };
-    }
+  } catch(e) {
+    resultBox.style.display = 'block';
+    resultBox.textContent = "Hata: " + e.message;
   }
-
-  // 4. Bitişik Sayılar (27112027 veya 271127)
-  const num = t.match(/\b(\d{2})(\d{2})(\d{2,4})\b/);
-  if(num) return { success: true, date: formatDate(num[1], num[2], num[3]) };
-
-  return { success: false };
-}
-
-function formatDate(d, m, y) {
-  if(y.length === 2) y = "20" + y;
-  return `${d.padStart(2,'0')}.${m.padStart(2,'0')}.${y}`;
+  prog.style.display = 'none';
 }
 </script>
 </body>
