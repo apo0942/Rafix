@@ -3,169 +3,181 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-<title>Kırp & Oku v5</title>
-<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<title>Global Tarih Okuyucu v7</title>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:system-ui,sans-serif;background:#f5f2eb;padding:1.5rem;max-width:500px;margin:0 auto}
-h1{font-size:18px;margin-bottom:1rem;color:#1a1712}
-#result{padding:1rem;background:#fff;border-radius:12px;border:1.5px solid #e0ddd5;min-height:40px;font-size:13px;margin-bottom:10px}
-#found{padding:1rem;border-radius:12px;font-size:15px;font-weight:600;display:none;margin-bottom:10px;text-align:center}
-.btn{display:block;width:100%;padding:12px;background:#c85a2a;color:#fff;border:none;border-radius:40px;font-size:15px;font-weight:600;cursor:pointer;margin-bottom:10px;text-align:center}
-.btn.green{background:#2e7d52}.btn.gray{background:#7a7570}
-input[type=file]{display:none}
-#crop-wrap{margin-bottom:10px;display:none}
-#crop-container{position:relative;background:#eee;border-radius:12px;overflow:hidden}
-#crop-canvas{display:block;width:100%;touch-action:none}
-#crop-box{position:absolute;border:2px solid #ff4400;background:rgba(255,68,0,0.2);pointer-events:none}
-#preview-strip{display:flex;flex-direction:column;gap:5px;margin-bottom:10px}
-#preview-strip img{max-width:100%;border:1px solid #ccc;background:#fff}
-progress{width:100%;accent-color:#c85a2a;display:none;margin-bottom:10px}
+body{font-family:system-ui,sans-serif;background:#f4f4f9;padding:1rem;max-width:500px;margin:0 auto}
+.card{background:#fff;padding:1.2rem;border-radius:20px;box-shadow:0 4px 12px rgba(0,0,0,0.08);margin-bottom:1rem}
+h1{font-size:18px;margin-bottom:1rem;text-align:center;color:#333}
+#crop-container{position:relative;width:100%;background:#eee;border-radius:12px;overflow:hidden;touch-action:none}
+#crop-canvas{display:block;width:100%}
+#crop-box{position:absolute;border:2px solid #ff4400;background:rgba(255,68,0,0.15);display:none;pointer-events:none}
+.btn{display:block;width:100%;padding:14px;background:#007bff;color:#fff;border:none;border-radius:12px;font-size:16px;font-weight:600;cursor:pointer;margin-top:10px;text-align:center}
+.btn-scan{background:#28a745}
+#preview-area{margin-top:10px;text-align:center;font-size:12px;color:#666}
+#preview-area img{max-width:100%;border:1px solid #ddd;border-radius:8px;margin-top:5px;background:#fff}
+#result-box{margin-top:10px;padding:15px;border-radius:12px;display:none;font-weight:600;text-align:center;line-height:1.5}
+.success{background:#e8f5e9;color:#2e7d32;border:1px solid #c8e6c9}
+.error{background:#ffebee;color:#c62828;border:1px solid #ffcdd2}
+progress{width:100%;margin-top:10px;height:8px;accent-color:#28a745;display:none}
 </style>
 </head>
 <body>
-<h1>✂️ Hassas Kırp & Oku v5</h1>
 
-<div style="display:flex;gap:8px;margin-bottom:10px">
-  <label class="btn" for="file-input" style="flex:1;margin:0">📷 Kamera</label>
-  <label class="btn" for="gallery-input" style="flex:1;margin:0;background:#7a7570">🖼️ Galeri</label>
-</div>
+<div class="card">
+  <h1>📅 Global Tarih Okuyucu v7</h1>
+  <input type="file" id="file-input" accept="image/*" onchange="handleFile(event)" style="display:none">
+  <button class="btn" onclick="document.getElementById('file-input').click()">📷 Fotoğraf Çek / Seç</button>
 
-<input type="file" id="file-input" accept="image/*" capture="environment" onchange="handleFile(event)">
-<input type="file" id="gallery-input" accept="image/*" onchange="handleFile(event)">
-
-<div id="crop-wrap">
-  <div id="crop-container">
-    <canvas id="crop-canvas"></canvas>
-    <div id="crop-box"></div>
+  <div id="crop-wrapper" style="display:none;margin-top:15px">
+    <div id="crop-container">
+      <canvas id="crop-canvas"></canvas>
+      <div id="crop-box"></div>
+    </div>
+    <button class="btn btn-scan" onclick="processImage()">🔍 Tarihi Çöz</button>
   </div>
-  <button class="btn green" onclick="doCrop()" style="margin-top:10px">🔍 Tarihi Oku</button>
 </div>
 
 <progress id="progress" max="100" value="0"></progress>
-<div id="preview-strip"></div>
-<div id="result">İşlem bekleniyor...</div>
-<div id="found"></div>
+<div id="preview-area"></div>
+<div id="result-box"></div>
 
 <script>
-let origImage = null;
-let cropStart = null, cropEnd = null, dragging = false;
-let imgScale = 1;
+let origImg = null;
+let startX, startY, isDrawing = false, cropScale = 1;
 
-async function handleFile(event) {
-  const file = event.target.files[0];
-  if (!file) return;
+function handleFile(e) {
+  const file = e.target.files[0];
+  if(!file) return;
   const reader = new FileReader();
-  reader.onload = (e) => {
-    origImage = new Image();
-    origImage.onload = () => {
+  reader.onload = (event) => {
+    origImg = new Image();
+    origImg.onload = () => {
       const canvas = document.getElementById('crop-canvas');
-      const maxW = Math.min(window.innerWidth - 40, 480);
-      imgScale = maxW / origImage.width;
-      canvas.width = origImage.width * imgScale;
-      canvas.height = origImage.height * imgScale;
-      canvas.getContext('2d').drawImage(origImage, 0, 0, canvas.width, canvas.height);
-      document.getElementById('crop-wrap').style.display = 'block';
-      document.getElementById('preview-strip').innerHTML = '';
-      addListeners();
+      const containerW = document.getElementById('crop-container').clientWidth;
+      cropScale = containerW / origImg.width;
+      canvas.width = containerW;
+      canvas.height = origImg.height * cropScale;
+      canvas.getContext('2d').drawImage(origImg, 0, 0, canvas.width, canvas.height);
+      document.getElementById('crop-wrapper').style.display = 'block';
+      document.getElementById('result-box').style.display = 'none';
+      initCrop();
     };
-    origImage.src = e.target.result;
+    origImg.src = event.target.result;
   };
   reader.readAsDataURL(file);
 }
 
-function addListeners() {
-  const c = document.getElementById('crop-canvas');
-  const getP = (e) => {
-    const r = c.getBoundingClientRect();
-    const s = e.touches ? e.touches[0] : e;
-    return { x: (s.clientX - r.left), y: (s.clientY - r.top) };
-  };
-  const start = (e) => { e.preventDefault(); dragging = true; cropStart = getP(e); cropEnd = cropStart; updateBox(); };
-  const move = (e) => { if (!dragging) return; cropEnd = getP(e); updateBox(); };
-  const stop = () => { dragging = false; };
-  
-  c.onmousedown = start; c.ontouchstart = start;
-  window.onmousemove = move; window.ontouchmove = move;
-  window.onmouseup = stop; window.ontouchend = stop;
-}
-
-function updateBox() {
+function initCrop() {
+  const container = document.getElementById('crop-container');
   const box = document.getElementById('crop-box');
-  box.style.display = 'block';
-  box.style.left = Math.min(cropStart.x, cropEnd.x) + 'px';
-  box.style.top = Math.min(cropStart.y, cropEnd.y) + 'px';
-  box.style.width = Math.abs(cropEnd.x - cropStart.x) + 'px';
-  box.style.height = Math.abs(cropEnd.y - cropStart.y) + 'px';
+  const getP = (e) => {
+    const r = container.getBoundingClientRect();
+    const ev = e.touches ? e.touches[0] : e;
+    return { x: ev.clientX - r.left, y: ev.clientY - r.top };
+  };
+  container.onmousedown = container.ontouchstart = (e) => {
+    isDrawing = true; const p = getP(e); startX = p.x; startY = p.y;
+    box.style.display = 'block';
+  };
+  window.onmousemove = window.ontouchmove = (e) => {
+    if(!isDrawing) return; const p = getP(e);
+    box.style.left = Math.min(startX, p.x) + 'px'; box.style.top = Math.min(startY, p.y) + 'px';
+    box.style.width = Math.abs(p.x - startX) + 'px'; box.style.height = Math.abs(p.y - startY) + 'px';
+  };
+  window.onmouseup = window.ontouchend = () => isDrawing = false;
 }
 
-async function doCrop() {
-  if (!cropStart) return;
-  document.getElementById('result').textContent = '⏳ Analiz ediliyor...';
-  document.getElementById('progress').style.display = 'block';
-  
-  const x = Math.min(cropStart.x, cropEnd.x) / imgScale;
-  const y = Math.min(cropStart.y, cropEnd.y) / imgScale;
-  const w = Math.abs(cropEnd.x - cropStart.x) / imgScale;
-  const h = Math.abs(cropEnd.y - cropStart.y) / imgScale;
+async function processImage() {
+  const box = document.getElementById('crop-box');
+  if(!box.style.width || parseInt(box.style.width) < 10) return alert("Lütfen tarih alanını seçin");
 
-  // Görüntü İşleme: Artık sert siyah-beyaz yapmıyoruz!
+  const prog = document.getElementById('progress');
+  const resBox = document.getElementById('result-box');
+  prog.style.display = 'block';
+  resBox.style.display = 'none';
+
+  const x = parseInt(box.style.left) / cropScale;
+  const y = parseInt(box.style.top) / cropScale;
+  const w = parseInt(box.style.width) / cropScale;
+  const h = parseInt(box.style.height) / cropScale;
+
+  // Görüntü İşleme: Dinamik Adaptif Eşikleme
   const canvas = document.createElement('canvas');
-  canvas.width = w * 3; canvas.height = h * 3;
+  canvas.width = w * 4; canvas.height = h * 4;
   const ctx = canvas.getContext('2d');
-  
-  // Sadece hafif netleştirme ve gri tonlama
-  ctx.filter = 'grayscale(1) brightness(1.1) contrast(1.4)';
-  ctx.drawImage(origImage, x, y, w, h, 0, 0, canvas.width, canvas.height);
+  ctx.drawImage(origImg, x, y, w, h, 0, 0, canvas.width, canvas.height);
 
-  const imgPrev = document.createElement('img');
-  imgPrev.src = canvas.toDataURL();
-  const strip = document.getElementById('preview-strip');
-  strip.innerHTML = '<span>İşlenen Görüntü (Gri Tonlama):</span>';
-  strip.appendChild(imgPrev);
+  const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const data = imgData.data;
+
+  // Lokal Parlaklık Analizi (Gürültü Silme)
+  for (let i = 0; i < data.length; i += 4) {
+    const avg = (data[i] + data[i+1] + data[i+2]) / 3;
+    // Eğer çok açık renkse (yeşil yaprak veya beyaz fon), tam beyaz yap
+    if (avg > 160) { data[i] = data[i+1] = data[i+2] = 255; }
+    // Eğer koyuysa daha da koyulaştır
+    else if (avg < 100) { data[i] = data[i+1] = data[i+2] = 0; }
+    else { data[i] = data[i+1] = data[i+2] = avg; }
+  }
+  ctx.putImageData(imgData, 0, 0);
+
+  document.getElementById('preview-area').innerHTML = 'İşlenen Görüntü:<br><img src="'+canvas.toDataURL()+'">';
 
   try {
     const worker = await Tesseract.createWorker('eng');
     await worker.setParameters({
-      tessedit_char_whitelist: '0123456789./- ',
-      tessedit_pageseg_mode: '7'
+      tessedit_char_whitelist: '0123456789./-JANFEBMARAPRMAYJUNJULAUGSEPOCTNOVDEC ',
+      tessedit_pageseg_mode: '6' 
     });
 
     const { data: { text } } = await worker.recognize(canvas);
     await worker.terminate();
 
-    const clean = text.replace(/[^0-9./-]/g, '').trim();
-    document.getElementById('result').textContent = 'Okunan: ' + (clean || "???");
-
-    const date = extractDate(clean);
-    const el = document.getElementById('found');
-    el.style.display = 'block';
-    if (date) {
-      el.style.background = '#eaf4ee'; el.style.color = '#2e7d52';
-      el.textContent = '✅ SKT: ' + date;
+    const result = analyzeText(text);
+    resBox.style.display = 'block';
+    if(result.success) {
+      resBox.className = 'card success';
+      resBox.innerHTML = `✅ Tarih: ${result.date}<br><small>Okunan: ${text.trim()}</small>`;
     } else {
-      el.style.background = '#faecec'; el.style.color = '#b52b2b';
-      el.textContent = '⚠️ Tarih seçilemedi. Lütfen daha dar kırpın.';
+      resBox.className = 'card error';
+      resBox.innerHTML = `⚠️ Anlaşılamadı: ${text.trim() || 'Boş'}<br><small>Lütfen alanı daha dar seçin.</small>`;
     }
-  } catch (err) {
-    document.getElementById('result').textContent = 'Hata: ' + err.message;
-  }
-  document.getElementById('progress').style.display = 'none';
+  } catch(e) { alert("Hata: " + e.message); }
+  prog.style.display = 'none';
 }
 
-function extractDate(t) {
-  // 06.11.27 veya 061127 gibi yapıları arar
-  const reg = /(\d{1,2})[./-]?(\d{1,2})[./-]?(\d{2,4})/;
-  const m = t.match(reg);
-  if (m) {
-    let d = m[1], month = m[2], y = m[3];
-    if (y.length === 2) y = "20" + y;
-    // Gün/Ay mantık kontrolü
-    if (parseInt(month) > 12 && parseInt(d) <= 12) [d, month] = [month, d];
-    return `${y}-${month.padStart(2, '0')}-${d.padStart(2, '0')}`;
+function analyzeText(raw) {
+  const t = raw.toUpperCase().replace(/\s+/g, '');
+  const months = ["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"];
+  
+  // 1. Standart Formatlar (DD.MM.YYYY, DD/MM/YY vb.)
+  const std = t.match(/(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})/);
+  if(std) return { success: true, date: formatDate(std[1], std[2], std[3]) };
+
+  // 2. Ay ve Yıl (12.2029 gibi)
+  const my = t.match(/(\d{1,2})[./-](\d{4})/);
+  if(my) return { success: true, date: `01.${my[1].padStart(2,'0')}.${my[2]} (Ay/Yıl)` };
+
+  // 3. Yazılı Ay (06/MAY/2026 gibi)
+  for(let i=0; i<months.length; i++) {
+    if(t.includes(months[i])) {
+      const parts = t.match(new RegExp(`(\\d{1,2})?.?${months[i]}.?(\\d{2,4})`));
+      if(parts) return { success: true, date: `${parts[1]||'01'}.${String(i+1).padStart(2,'0')}.${parts[2].length==2?'20'+parts[2]:parts[2]}` };
+    }
   }
-  return null;
+
+  // 4. Bitişik Sayılar (27112027 veya 271127)
+  const num = t.match(/\b(\d{2})(\d{2})(\d{2,4})\b/);
+  if(num) return { success: true, date: formatDate(num[1], num[2], num[3]) };
+
+  return { success: false };
+}
+
+function formatDate(d, m, y) {
+  if(y.length === 2) y = "20" + y;
+  return `${d.padStart(2,'0')}.${m.padStart(2,'0')}.${y}`;
 }
 </script>
 </body>
