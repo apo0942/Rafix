@@ -3,174 +3,220 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-<title>Kırp & Oku v6 - Akıllı Eşikleme</title>
+<title>Kırp & Oku v8</title>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:system-ui,sans-serif;background:#f0f2f5;padding:1rem;max-width:500px;margin:0 auto}
-.card{background:#fff;padding:1rem;border-radius:16px;box-shadow:0 2px 8px rgba(0,0,0,0.1);margin-bottom:1rem}
-h1{font-size:18px;margin-bottom:1rem;text-align:center}
-#crop-container{position:relative;width:100%;background:#000;border-radius:12px;overflow:hidden;touch-action:none}
-#crop-canvas{display:block;width:100%}
-#crop-box{position:absolute;border:2px solid #00ff00;background:rgba(0,255,0,0.1);display:none;pointer-events:none}
-.btn{display:block;width:100%;padding:14px;background:#007bff;color:#fff;border:none;border-radius:12px;font-size:16px;font-weight:600;cursor:pointer;margin-top:10px}
-.btn-scan{background:#28a745}
-#preview-area{margin-top:10px;text-align:center}
-#preview-area img{max-width:100%;border:2px solid #ddd;border-radius:8px;background:#f8f9fa}
-#result-box{margin-top:10px;padding:12px;border-radius:12px;min-height:50px;font-weight:600;text-align:center}
-.success{background:#d4edda;color:#155724}.error{background:#f8d7da;color:#721c24}
-progress{width:100%;margin-top:10px;display:none}
+body{font-family:system-ui,sans-serif;background:#f5f2eb;padding:1.5rem;max-width:500px;margin:0 auto}
+h1{font-size:20px;margin-bottom:1rem;color:#1a1712}
+.tabs{display:flex;background:#e8e4db;border-radius:10px;padding:3px;margin-bottom:1rem;gap:3px}
+.tab{flex:1;padding:8px;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;background:none;color:#7a7570;font-family:system-ui}
+.tab.active{background:#fff;color:#1a1712}
+#result{padding:1rem;background:#fff;border-radius:12px;border:1.5px solid #e0ddd5;min-height:50px;font-size:13px;color:#1a1712;line-height:1.6;margin-bottom:10px;white-space:pre-wrap}
+#found{padding:1rem;background:#eaf4ee;border-radius:12px;font-size:15px;font-weight:600;color:#2e7d52;display:none;margin-bottom:10px;text-align:center;white-space:pre-wrap}
+.btn{display:block;width:100%;padding:12px;background:#c85a2a;color:#fff;border:none;border-radius:40px;font-size:15px;font-weight:600;cursor:pointer;margin-bottom:10px;font-family:system-ui;text-align:center}
+.btn.green{background:#2e7d52}.btn.gray{background:#7a7570}
+label.btn{display:block}
+input[type=file]{display:none}
+#crop-wrap{margin-bottom:10px;display:none}
+#crop-hint{font-size:12px;color:#7a7570;text-align:center;margin-bottom:8px;padding:6px;background:#fff;border-radius:8px}
+#crop-container{position:relative}
+#crop-canvas{display:block;width:100%;border-radius:12px;border:1.5px solid #e0ddd5;touch-action:none}
+#crop-box{position:absolute;border:2.5px solid #c85a2a;background:rgba(200,90,42,0.1);pointer-events:none;display:none}
+progress{width:100%;height:6px;border-radius:10px;display:none;margin-bottom:10px;accent-color:#c85a2a}
+#preview-strip{display:flex;gap:4px;margin-bottom:8px;overflow-x:auto}
+#preview-strip img{height:60px;border-radius:4px;border:1px solid #e0ddd5;background:#fff}
 </style>
 </head>
 <body>
+<h1>✂️ Kırp & Oku v8</h1>
+<div class="tabs">
+  <button class="tab active" onclick="setMode('barcode',this)">📷 Barkod</button>
+  <button class="tab" onclick="setMode('skt',this)">📅 SKT</button>
+</div>
+<div style="display:flex;gap:8px;margin-bottom:10px">
+  <label class="btn" for="file-input" style="flex:1;margin:0">📷 Kamera</label>
+  <label class="btn" for="gallery-input" style="flex:1;margin:0;background:#7a7570">🖼️ Galeri</label>
+</div>
+<input type="file" id="file-input" accept="image/*" capture="environment" onchange="handleFile(event)">
+<input type="file" id="gallery-input" accept="image/*" onchange="handleFile(event)">
 
-<div class="card">
-  <h1>📷 SKT Okuyucu v6</h1>
-  <input type="file" id="file-input" accept="image/*" onchange="handleFile(event)" style="display:none">
-  <button class="btn" onclick="document.getElementById('file-input').click()">Fotoğraf Seç / Çek</button>
-
-  <div id="crop-wrapper" style="display:none;margin-top:15px">
-    <div id="crop-container">
-      <canvas id="crop-canvas"></canvas>
-      <div id="crop-box"></div>
-    </div>
-    <button class="btn btn-scan" onclick="processImage()">✂️ Kırp ve Analiz Et</button>
+<div id="crop-wrap">
+  <div id="crop-hint"></div>
+  <div id="crop-container">
+    <canvas id="crop-canvas"></canvas>
+    <div id="crop-box"></div>
+  </div>
+  <div style="display:flex;gap:8px;margin-top:8px">
+    <button class="btn green" onclick="doCrop()" style="flex:1;margin:0">✂️ Kırp ve Oku</button>
+    <button class="btn gray" onclick="resetCrop()" style="flex:1;margin:0">↺ Sıfırla</button>
   </div>
 </div>
 
 <progress id="progress" max="100" value="0"></progress>
-
-<div id="preview-area"></div>
-<div id="result-box" style="display:none"></div>
+<div id="preview-strip"></div>
+<div id="result">Fotoğraf seçin…</div>
+<div id="found"></div>
 
 <script>
-let origImg = null;
-let startX, startY, isDrawing = false;
-let scale = 1;
+let mode = 'barcode';
+let origImage = null;
+let cropStart = null, cropEnd = null, dragging = false;
+let imgScale = 1;
 
-function handleFile(e) {
-  const file = e.target.files[0];
-  if(!file) return;
+function setMode(m, btn) {
+  mode = m;
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('result').textContent = 'Fotoğraf seçin…';
+  document.getElementById('found').style.display = 'none';
+  document.getElementById('crop-wrap').style.display = 'none';
+  document.getElementById('preview-strip').innerHTML = '';
+}
+
+async function handleFile(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  document.getElementById('result').textContent = '⏳ Yükleniyor…';
   const reader = new FileReader();
-  reader.onload = (event) => {
-    origImg = new Image();
-    origImg.onload = () => {
+  reader.onload = (e) => {
+    origImage = new Image();
+    origImage.onload = () => {
       const canvas = document.getElementById('crop-canvas');
-      const containerW = document.getElementById('crop-container').clientWidth;
-      scale = containerW / origImg.width;
-      canvas.width = containerW;
-      canvas.height = origImg.height * scale;
-      canvas.getContext('2d').drawImage(origImg, 0, 0, canvas.width, canvas.height);
-      document.getElementById('crop-wrapper').style.display = 'block';
-      initCrop();
+      const maxW = Math.min(window.innerWidth - 48, 480);
+      imgScale = maxW / origImage.width;
+      canvas.width  = origImage.width  * imgScale;
+      canvas.height = origImage.height * imgScale;
+      canvas.getContext('2d').drawImage(origImage, 0, 0, canvas.width, canvas.height);
+      document.getElementById('crop-hint').textContent = '👆 Tarih veya Barkodun etrafını darca çizin';
+      document.getElementById('crop-wrap').style.display = 'block';
+      document.getElementById('result').textContent = 'Alanı seçin ve butona basın';
+      document.getElementById('found').style.display = 'none';
+      addListeners();
     };
-    origImg.src = event.target.result;
+    origImage.src = e.target.result;
   };
   reader.readAsDataURL(file);
 }
 
-function initCrop() {
-  const container = document.getElementById('crop-container');
-  const box = document.getElementById('crop-box');
-  
-  const getPos = (e) => {
-    const rect = container.getBoundingClientRect();
-    const ev = e.touches ? e.touches[0] : e;
-    return { x: ev.clientX - rect.left, y: ev.clientY - rect.top };
+function addListeners() {
+  const c = document.getElementById('crop-canvas');
+  const getP = (e) => {
+    const r = c.getBoundingClientRect();
+    const s = e.touches ? e.touches[0] : e;
+    return { x:(s.clientX-r.left)*(c.width/r.width), y:(s.clientY-r.top)*(c.height/r.height) };
   };
-
-  container.onmousedown = container.ontouchstart = (e) => {
-    isDrawing = true;
-    const pos = getPos(e);
-    startX = pos.x; startY = pos.y;
-    box.style.display = 'block';
-  };
-
-  window.onmousemove = window.ontouchmove = (e) => {
-    if(!isDrawing) return;
-    const pos = getPos(e);
-    box.style.left = Math.min(startX, pos.x) + 'px';
-    box.style.top = Math.min(startY, pos.y) + 'px';
-    box.style.width = Math.abs(pos.x - startX) + 'px';
-    box.style.height = Math.abs(pos.y - startY) + 'px';
-  };
-
-  window.onmouseup = window.ontouchend = () => isDrawing = false;
+  c.onmousedown = c.ontouchstart = (e) => { e.preventDefault(); dragging=true; cropStart=getP(e); cropEnd=cropStart; updateBox(); };
+  window.onmousemove = window.ontouchmove = (e) => { if(!dragging) return; cropEnd=getP(e); updateBox(); };
+  window.onmouseup = window.ontouchend = () => { dragging=false; };
 }
 
-async function processImage() {
-  const box = document.getElementById('crop-box');
-  const resultBox = document.getElementById('result-box');
-  const prog = document.getElementById('progress');
-  
-  const x = parseInt(box.style.left) / scale;
-  const y = parseInt(box.style.top) / scale;
-  const w = parseInt(box.style.width) / scale;
-  const h = parseInt(box.style.height) / scale;
+function updateBox(){
+  const c=document.getElementById('crop-canvas'), r=c.getBoundingClientRect();
+  const sx=r.width/c.width, sy=r.height/c.height, box=document.getElementById('crop-box');
+  box.style.display='block';
+  box.style.left=Math.min(cropStart.x,cropEnd.x)*sx+'px';
+  box.style.top=Math.min(cropStart.y,cropEnd.y)*sy+'px';
+  box.style.width=Math.abs(cropEnd.x-cropStart.x)*sx+'px';
+  box.style.height=Math.abs(cropEnd.y-cropStart.y)*sy+'px';
+}
 
-  if(w < 20) return alert("Lütfen daha geniş bir alan seçin");
+function resetCrop(){cropStart=null;cropEnd=null;document.getElementById('crop-box').style.display='none';}
 
-  prog.style.display = 'block';
-  resultBox.style.display = 'none';
+async function doCrop() {
+  const x=Math.min(cropStart.x,cropEnd.x)/imgScale, y=Math.min(cropStart.y,cropEnd.y)/imgScale;
+  const w=Math.abs(cropEnd.x-cropStart.x)/imgScale, h=Math.abs(cropEnd.y-cropStart.y)/imgScale;
+  if(mode==='barcode') await readBarcode(x,y,w,h); else await readSKT(x,y,w,h);
+}
 
-  // --- AKILLI GÖRÜNTÜ İŞLEME ---
-  const canvas = document.createElement('canvas');
-  canvas.width = w * 4; canvas.height = h * 4;
-  const ctx = canvas.getContext('2d');
-  ctx.drawImage(origImg, x, y, w, h, 0, 0, canvas.width, canvas.height);
+async function readBarcode(x,y,w,h) {
+  document.getElementById('result').textContent='🔍 Taranıyor...';
+  const canvas = prepareImg(x,y,w,h,false);
+  const scanner = new Html5Qrcode('__scan_tmp__');
+  canvas.toBlob(blob => {
+    scanner.scanFile(new File([blob], 'b.jpg'), false)
+      .then(code => {
+        document.getElementById('result').textContent=`✅ Barkod: ${code}`;
+        lookupProduct(code);
+      }).catch(()=> document.getElementById('result').textContent='⚠️ Okunamadı.');
+  }, 'image/jpeg', 0.9);
+}
 
-  const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-  const data = imgData.data;
-
-  // 1. Adım: Ortalama Parlaklığı Bul (Dinamik Eşikleme için)
-  let totalBrightness = 0;
-  for(let i=0; i<data.length; i+=4) {
-    totalBrightness += (data[i] + data[i+1] + data[i+2]) / 3;
-  }
-  const avg = totalBrightness / (data.length / 4);
-  const threshold = avg * 0.85; // Ortalamanın %85'inden koyu olanları siyah yap (Yeşilleri eler)
-
-  // 2. Adım: Filtrele
-  for(let i=0; i<data.length; i+=4) {
-    const brightness = (data[i] + data[i+1] + data[i+2]) / 3;
-    const val = brightness < threshold ? 0 : 255; 
-    data[i] = data[i+1] = data[i+2] = val;
-  }
-  ctx.putImageData(imgData, 0, 0);
-
-  // Önizlemeyi göster
-  const previewArea = document.getElementById('preview-area');
-  previewArea.innerHTML = '<b>İşlenen Görüntü:</b><br>';
-  const img = new Image();
-  img.src = canvas.toDataURL();
-  previewArea.appendChild(img);
+async function readSKT(x,y,w,h) {
+  document.getElementById('result').textContent='⏳ OCR İşleniyor...';
+  document.getElementById('progress').style.display='block';
+  const canvas = prepareImg(x,y,w,h,true);
+  document.getElementById('preview-strip').innerHTML = '<span>Önizleme:</span><br><img src="'+canvas.toDataURL()+'">';
 
   try {
     const worker = await Tesseract.createWorker('eng');
     await worker.setParameters({
-      tessedit_char_whitelist: '0123456789./-',
-      tessedit_pageseg_mode: '7',
+      tessedit_char_whitelist: '0123456789./-JANFEBMARAPRMAYJUNJULAUGSEPOCTNOVDEC ',
+      tessedit_pageseg_mode: '6'
     });
-
     const { data: { text } } = await worker.recognize(canvas);
     await worker.terminate();
 
-    const cleanText = text.replace(/[^0-9./-]/g, '').trim();
-    resultBox.style.display = 'block';
-    
-    if(cleanText.length >= 6) {
-      resultBox.className = 'card success';
-      resultBox.innerHTML = `Okunan: ${cleanText}<br>Tarih Başarılı!`;
+    const date = analyzeDate(text);
+    const el = document.getElementById('found');
+    el.style.display = 'block';
+    document.getElementById('result').textContent = 'Okunan: ' + text.trim();
+    if(date){
+      el.style.background='#eaf4ee'; el.style.color='#2e7d52';
+      el.textContent='✅ Tarih: ' + date;
     } else {
-      resultBox.className = 'card error';
-      resultBox.textContent = `Okunamadı: ${cleanText || 'Metin yok'}. Lütfen sadece rakamları içeren çok dar bir alan seçin.`;
+      el.style.background='#faecec'; el.style.color='#b52b2b';
+      el.textContent='⚠️ Tarih ayrıştırılamadı.';
     }
-  } catch(e) {
-    resultBox.style.display = 'block';
-    resultBox.textContent = "Hata: " + e.message;
+  } catch(e) { document.getElementById('result').textContent='❌ Hata'; }
+  document.getElementById('progress').style.display='none';
+}
+
+function prepareImg(x,y,w,h,skt){
+  const out = document.createElement('canvas');
+  out.width = w*4; out.height = h*4;
+  const ctx = out.getContext('2d');
+  ctx.drawImage(origImage, x,y,w,h, 0,0,out.width,out.height);
+  if(skt){
+    const id=ctx.getImageData(0,0,out.width,out.height), d=id.data;
+    for(let i=0; i<d.length; i+=4){
+      const v = (d[i]+d[i+1]+d[i+2])/3;
+      const res = v > 155 ? 255 : (v < 90 ? 0 : v); // Yaprakları sil, rakamları tut
+      d[i]=d[i+1]=d[i+2]=res;
+    }
+    ctx.putImageData(id,0,0);
   }
-  prog.style.display = 'none';
+  return out;
+}
+
+function analyzeDate(raw) {
+  const t = raw.toUpperCase().replace(/\s+/g, '');
+  // DD.MM.YYYY veya DD.MM.YY
+  const m1 = t.match(/(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})/);
+  if(m1) return formatD(m1[1], m1[2], m1[3]);
+  // MM.YYYY (Küp şeker formatı)
+  const m2 = t.match(/(\d{1,2})[./-](\d{4})/);
+  if(m2) return `${m2[1].padStart(2,'0')}.${m2[2]}`;
+  // Bitişik 6-8 haneli rakamlar
+  const m3 = t.match(/\b(\d{2})(\d{2})(\d{2,4})\b/);
+  if(m3) return formatD(m3[1], m3[2], m3[3]);
+  return null;
+}
+
+function formatD(d,m,y){
+  if(y.length===2) y = "20"+y;
+  return `${d.padStart(2,'0')}.${m.padStart(2,'0')}.${y}`;
+}
+
+async function lookupProduct(code){
+  const el=document.getElementById('found'); el.style.display='block';
+  fetch(`https://world.openfoodfacts.org/api/v0/product/${code}.json`)
+    .then(r=>r.json()).then(d=>{
+      if(d.status===1) el.textContent=`✅ ${d.product.product_name || 'Ürün bulundu'}`;
+    });
 }
 </script>
+<div id="__scan_tmp__" style="display:none"></div>
 </body>
 </html>
