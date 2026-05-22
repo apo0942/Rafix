@@ -2812,66 +2812,54 @@ async function claudeReadSKT(base64) {
   }
 }
 
-function extractDate(text){
-  // OCR hata düzeltme — nokta matris yazı tipleri için
-  const t=text.toUpperCase()
-    .replace(/O/g,'0').replace(/[Il\|]/g,'1')
-    .replace(/\s+/g,' '); // Tüm fazlalık boşlukları tek boşluğa indirir
-  
-const patterns=[
-    // 1. TETT/SKT başlıklı GÜN AY YIL (Örn: SKT 24 10 26)
-    /(?:SKT|SON\s*KUL|TETT|EXP|BEST\s*BY|USE\s*BY|BB|MHD)[:\s.]*(\d{1,2})[.\/-\s]+(\d{1,2})[.\/-\s]+(\d{2,4})/i,
-    
-    // 2. TETT/SKT başlıklı SADECE AY ve YIL (Örn: SKT 10 26 veya SKT 10 2026)
-    /(?:SKT|SON\s*KUL|TETT|EXP|BEST\s*BY|USE\s*BY|BB|MHD)[:\s.]*(\d{1,2})[.\/-\s]+(\d{2,4})/i,
+function extractDate(text) {
+  // 1. Hatalı okunan harfleri rakama çevir (O -> 0, l/I -> 1) ve sadece rakam/ayraç bırak
+  let t = text.toUpperCase().replace(/O/g, '0').replace(/[IL|]/g, '1');
+  t = t.replace(/[^0-9.\/-\s]/g, ' ').replace(/\s+/g, ' ').trim();
 
-    // 3. YYYY-MM-DD veya benzeri (Örn: 2026 10 24)
-    /(20\d{2})[.\/-\s]+(\d{1,2})[.\/-\s]+(\d{1,2})/,
-
-    // 4. Standart 3'lü sayı grupları (Örn: 24 10 26 veya 24.10.2026)
-    /\b(\d{2})[.\/-\s]+(\d{2})[.\/-\s]+(\d{2,4})\b/,
-
-    // 5. Standart 2'li (Sadece AY ve 4 haneli YIL - Örn: 10 2026)
-    /\b(\d{1,2})[.\/-\s]+(20\d{2})\b/,
-
-    // 6. YYMMDD bitişik format (240227 = 2024-02-27)
-    /\b(\d{2})(\d{2})(\d{2})\b/
+  // 2. Çok daha esnek ve cihaz seçmeyen yeni şablonlar
+  const patterns = [
+    // 3'lü gruplar (DD MM YY veya DD MM YYYY) -> Örn: 24 10 26 veya 24 10 2026
+    /(?:^|\s)(\d{1,2})[\s.\/-]+(\d{1,2})[\s.\/-]+(\d{2,4})(?:\s|$)/,
+    // 2'li gruplar (MM YY veya MM YYYY) -> Örn: 10 26 veya 10 2026
+    /(?:^|\s)(\d{1,2})[\s.\/-]+(\d{2,4})(?:\s|$)/,
+    // 6 bitişik rakam (DDMMYY veya YYMMDD) -> Örn: 241026
+    /(?:^|\s)(\d{2})(\d{2})(\d{2})(?:\s|$)/
   ];
-  const mMap={OCA:1,ŞUB:2,MAR:3,NİS:4,MAY:5,HAZ:6,TEM:7,AĞU:8,EYL:9,EKİ:10,KAS:11,ARA:12,JAN:1,FEB:2,APR:4,JUN:6,JUL:7,AUG:8,SEP:9,OCT:10,NOV:11,DEC:12};
-  
-  for(const pat of patterns){
-    const m=t.match(pat);if(!m)continue;
-    try{
-      const g=m.slice(1).filter(Boolean);
-      let day,month,year;
-      if(g.length===2){
-        month=parseInt(g[0]);year=parseInt(g[1]);
-        if(year<100)year+=2000;
-        if(month<1||month>12)continue;
-        return year+'-'+String(month).padStart(2,'0')+'-28';
-      } else if(g.length===3){
-        if(isNaN(parseInt(g[1]))){
-          day=parseInt(g[0]);month=mMap[g[1].slice(0,3)]||1;year=parseInt(g[2]);
-        } else if(g[0].length===4){
-          year=parseInt(g[0]);month=parseInt(g[1]);day=parseInt(g[2]);
-        } else if(g[0].length===2&&parseInt(g[0])<=31&&parseInt(g[0])>=1&&
-                   g[1].length===2&&parseInt(g[1])<=12&&
-                   g[2].length===2){
-          // YY MM DD veya DD MM YY formatı
-          year=2000+parseInt(g[0]);month=parseInt(g[1]);day=parseInt(g[2]);
-          // Yıl makul değilse tam tersi dd mm yy dene
-          if(year<2024||year>2040){
-            day=parseInt(g[0]);month=parseInt(g[1]);year=2000+parseInt(g[2]);
-          }
-        } else {
-          day=parseInt(g[0]);month=parseInt(g[1]);year=parseInt(g[2]);
-        }
-        if(year<100)year+=2000;
-        if(month>12&&day<=12)[day,month]=[month,day];
-        if(day<1||day>31||month<1||month>12||year<2024||year>2040)continue;
-        return year+'-'+String(month).padStart(2,'0')+'-'+String(day).padStart(2,'0');
+
+  for (let pat of patterns) {
+    const match = t.match(pat);
+    if (!match) continue;
+
+    let d, m, y;
+
+    if (match[3]) { 
+      // 3'lü tarih bulundu (Örn: "24", "10", "26")
+      let n1 = parseInt(match[1]), n2 = parseInt(match[2]), n3 = parseInt(match[3]);
+      
+      if (n1 >= 2024) { y = n1; m = n2; d = n3; } // YYYY MM DD (Örn: 2026 10 24)
+      else if (n3 >= 2024) { d = n1; m = n2; y = n3; } // DD MM YYYY (Örn: 24 10 2026)
+      else {
+        // Eğer ilk rakam 12'den büyükse (24 gibi) kesinlikle Gündür -> DD MM YY
+        if (n1 > 12) { d = n1; m = n2; y = 2000 + n3; }
+        // Değilse YY MM DD formatı kabul et
+        else { y = 2000 + n1; m = n2; d = n3; }
       }
-    }catch{}
+    } else if (match[2]) {
+      // 2'li tarih bulundu (Örn: "10", "26")
+      m = parseInt(match[1]);
+      y = parseInt(match[2]);
+      if (y < 100) y += 2000;
+      d = 28; // Gün eksikse yasal sınır olan 28'i atıyoruz
+    }
+
+    // Eğer Ay 12'den büyük çıkarsa (Yani Ay ve Gün paket üzerinde ters basılmışsa) yer değiştir
+    if (m > 12 && d <= 12) { let temp = m; m = d; d = temp; }
+
+    // Çıkan sonuç mantıklı bir tarih mi diye son kez sor ve onayla
+    if (d >= 1 && d <= 31 && m >= 1 && m <= 12 && y >= 2024 && y <= 2040) {
+      return y + '-' + String(m).padStart(2, '0') + '-' + String(d).padStart(2, '0');
+    }
   }
   return null;
 }
