@@ -2812,41 +2812,66 @@ async function claudeReadSKT(base64) {
   }
 }
 
-function extractDate(text) {
-  const t = text.replace(/\s+/g,' ').toUpperCase();
-  const patterns = [
-    /(?:SKT|SON KUL|S\.K\.T|EXP|BEST BY|USE BY|BB)[:\s.]*(\d{1,2})[.\/-](\d{1,2})[.\/-](\d{2,4})/i,
-    /(?:SKT|SON KUL|S\.K\.T|EXP|BEST BY|USE BY|BB)[:\s.]*(\d{1,2})[.\/-](\d{4})/i,
-    /(\d{1,2})[.\/-](\d{1,2})[.\/-](\d{4})/,
-    /(\d{1,2})[.\/-](\d{4})/,
-    /(\d{4})-(\d{2})-(\d{2})/,
+function extractDate(text){
+  // OCR hata düzeltme — nokta matris yazı tipleri için
+  const t=text.toUpperCase()
+    .replace(/O/g,'0').replace(/[Il\|]/g,'1')
+    .replace(/\s+/g,' '); // Tüm fazlalık boşlukları tek boşluğa indirir
+  
+const patterns=[
+    // 1. TETT/SKT başlıklı GÜN AY YIL (Örn: SKT 24 10 26)
+    /(?:SKT|SON\s*KUL|TETT|EXP|BEST\s*BY|USE\s*BY|BB|MHD)[:\s.]*(\d{1,2})[.\/-\s]+(\d{1,2})[.\/-\s]+(\d{2,4})/i,
+    
+    // 2. TETT/SKT başlıklı SADECE AY ve YIL (Örn: SKT 10 26 veya SKT 10 2026)
+    /(?:SKT|SON\s*KUL|TETT|EXP|BEST\s*BY|USE\s*BY|BB|MHD)[:\s.]*(\d{1,2})[.\/-\s]+(\d{2,4})/i,
+
+    // 3. YYYY-MM-DD veya benzeri (Örn: 2026 10 24)
+    /(20\d{2})[.\/-\s]+(\d{1,2})[.\/-\s]+(\d{1,2})/,
+
+    // 4. Standart 3'lü sayı grupları (Örn: 24 10 26 veya 24.10.2026)
+    /\b(\d{2})[.\/-\s]+(\d{2})[.\/-\s]+(\d{2,4})\b/,
+
+    // 5. Standart 2'li (Sadece AY ve 4 haneli YIL - Örn: 10 2026)
+    /\b(\d{1,2})[.\/-\s]+(20\d{2})\b/,
+
+    // 6. YYMMDD bitişik format (240227 = 2024-02-27)
+    /\b(\d{2})(\d{2})(\d{2})\b/
   ];
-  const monthMap={OCA:1,ŞUB:2,MAR:3,NİS:4,MAY:5,HAZ:6,TEM:7,AĞU:8,EYL:9,EKİ:10,KAS:11,ARA:12,JAN:1,FEB:2,APR:4,JUN:6,JUL:7,AUG:8,SEP:9,OCT:10,NOV:11,DEC:12};
-  for (const pat of patterns) {
-    const m = t.match(pat);
-    if (!m) continue;
-    try {
-      let day, month, year;
-      const groups = m.slice(1).filter(Boolean);
-      if (groups.length === 2) {
-        month=parseInt(groups[0]); year=parseInt(groups[1]);
-        if (year<100) year+=2000;
-        if (month<1||month>12) continue;
-        return `${year}-${String(month).padStart(2,'0')}-01`;
-      } else if (groups.length === 3) {
-        if (isNaN(parseInt(groups[1]))) {
-          day=parseInt(groups[0]); month=monthMap[groups[1].slice(0,3)]||1; year=parseInt(groups[2]);
-        } else if (groups[0].length === 4) {
-          year=parseInt(groups[0]); month=parseInt(groups[1]); day=parseInt(groups[2]);
+  const mMap={OCA:1,ŞUB:2,MAR:3,NİS:4,MAY:5,HAZ:6,TEM:7,AĞU:8,EYL:9,EKİ:10,KAS:11,ARA:12,JAN:1,FEB:2,APR:4,JUN:6,JUL:7,AUG:8,SEP:9,OCT:10,NOV:11,DEC:12};
+  
+  for(const pat of patterns){
+    const m=t.match(pat);if(!m)continue;
+    try{
+      const g=m.slice(1).filter(Boolean);
+      let day,month,year;
+      if(g.length===2){
+        month=parseInt(g[0]);year=parseInt(g[1]);
+        if(year<100)year+=2000;
+        if(month<1||month>12)continue;
+        return year+'-'+String(month).padStart(2,'0')+'-28';
+      } else if(g.length===3){
+        if(isNaN(parseInt(g[1]))){
+          day=parseInt(g[0]);month=mMap[g[1].slice(0,3)]||1;year=parseInt(g[2]);
+        } else if(g[0].length===4){
+          year=parseInt(g[0]);month=parseInt(g[1]);day=parseInt(g[2]);
+        } else if(g[0].length===2&&parseInt(g[0])<=31&&parseInt(g[0])>=1&&
+                   g[1].length===2&&parseInt(g[1])<=12&&
+                   g[2].length===2){
+          // YY MM DD veya DD MM YY formatı
+          year=2000+parseInt(g[0]);month=parseInt(g[1]);day=parseInt(g[2]);
+          // Yıl makul değilse tam tersi dd mm yy dene
+          if(year<2024||year>2040){
+            day=parseInt(g[0]);month=parseInt(g[1]);year=2000+parseInt(g[2]);
+          }
         } else {
-          day=parseInt(groups[0]); month=parseInt(groups[1]); year=parseInt(groups[2]);
+          day=parseInt(g[0]);month=parseInt(g[1]);year=parseInt(g[2]);
         }
-        if (year<100) year+=2000;
-        if (month>12&&day<=12) [day,month]=[month,day];
-        if (day<1||day>31||month<1||month>12||year<2020||year>2040) continue;
-        return `${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+        if(year<100)year+=2000;
+        if(month>12&&day<=12)[day,month]=[month,day];
+        if(day<1||day>31||month<1||month>12||year<2024||year>2040)continue;
+        return year+'-'+String(month).padStart(2,'0')+'-'+String(day).padStart(2,'0');
       }
-    } catch {}
+    }catch{}
   }
   return null;
 }
