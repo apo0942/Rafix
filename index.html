@@ -2152,30 +2152,36 @@ async function cropReadBarcode(x,y,w,h){
 }
 
 async function cropReadSKT(x,y,w,h){
-  const status=document.getElementById('crop-modal-status');
-  const canvas=cropRotateCanvas(cropModalImage,x,y,w,h,0,3,true);
+  const status = document.getElementById('crop-modal-status');
+  const canvas = cropRotateCanvas(cropModalImage,x,y,w,h,0,3,true);
   showCropPreview(canvas);
-  if(!window.Tesseract){
-    await new Promise((res,rej)=>{const s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';s.onload=res;s.onerror=rej;document.head.appendChild(s);});
-  }
-  try{
-    const result=await Tesseract.recognize(canvas,'eng',{
-      logger:m=>{if(m.status==='recognizing text')status.textContent='OCR: %'+Math.round(m.progress*100);}
-    },{
-      tessedit_char_whitelist:'0123456789./-: ',
-      tessedit_pageseg_mode:'7',
-    });
-    const rawText=result.data.text;
-    const text=rawText.replace(/[^0-9.\/:\ \-]/g,' ').replace(/\s+/g,' ').trim();
-    const date=cropExtractDate(rawText+' '+text);
-    if(date){
-      status.textContent='✅ SKT: '+fmtDate(date);
-      document.getElementById('f-expiry').value=date;
-      setTimeout(()=>closeModal('crop-modal'),1500);
+
+  status.textContent = '⚡ ML Kit ile okunuyor…';
+
+  // Android Java'dan sonucu alacak Dinleyici
+  window.sktCallback = function(rawText) {
+    if(rawText) {
+      // Dosyanın en altındaki yepyeni "extractDate" fonksiyonunu kullanıyoruz
+      const date = extractDate(rawText);
+      if(date){
+        status.textContent = '✅ SKT: ' + fmtDate(date);
+        document.getElementById('f-expiry').value = date;
+        setTimeout(() => closeModal('crop-modal'), 1500);
+      } else {
+        status.textContent = '⚠️ Tarih bulunamadı. Daha dar alan seçin.\nOkunan: ' + rawText.replace(/\n/g, ' ').slice(0,50);
+      }
     } else {
-      status.textContent='⚠️ Tarih bulunamadı. Daha dar alan seçin.\nOkunan: '+text.slice(0,60);
+      status.textContent = '❌ Yazı okunamadı.';
     }
-  }catch(e){status.textContent='❌ '+e.message;}
+  };
+
+  // Fotoğrafı Android ML Kit motoruna gönder!
+  if (window.Android && window.Android.recognizeText) {
+    const base64Data = canvas.toDataURL('image/jpeg', 0.9);
+    window.Android.recognizeText(base64Data, 'sktCallback');
+  } else {
+    status.textContent = '⚠️ HATA: Android Köprüsü bulunamadı! Tarayıcıda değil, telefonda test edin.';
+  }
 }
 
 function showCropPreview(canvas){
@@ -2223,50 +2229,6 @@ function cropRotateCanvas(img,x,y,w,h,angle,factor=2,contrast=false){
   return out;
 }
 
-function cropExtractDate(text){
-  const t=text.toUpperCase().replace(/O/g,'0').replace(/[Il\|]/g,'1').replace(/\s+/g,' ');
-  const patterns=[
-    /(?:SKT|SON\s*KUL|TETT|EXP|BEST\s*BY|USE\s*BY|BB|MHD)[:\s.]*(\d{1,2})[.\/-](\d{1,2})[.\/-](\d{2,4})/i,
-    /(?:SKT|SON\s*KUL|TETT|EXP|BEST\s*BY|USE\s*BY|BB|MHD)[:\s.]*(\d{1,2})[.\/-](\d{4})/i,
-    /(\d{1,2})[.\/-](\d{1,2})[.\/-](20\d{2})/,
-    /(\d{1,2})[.\/-](20\d{2})/,
-    /(20\d{2})-(\d{2})-(\d{2})/,
-    /\b(\d{2})(\d{2})(\d{2})\b/,
-  ];
-  const mMap={OCA:1,ŞUB:2,MAR:3,NİS:4,MAY:5,HAZ:6,TEM:7,AĞU:8,EYL:9,EKİ:10,KAS:11,ARA:12,JAN:1,FEB:2,APR:4,JUN:6,JUL:7,AUG:8,SEP:9,OCT:10,NOV:11,DEC:12};
-  for(const pat of patterns){
-    const m=t.match(pat);if(!m)continue;
-    try{
-      const g=m.slice(1).filter(Boolean);let day,month,year;
-      if(g.length===2){month=parseInt(g[0]);year=parseInt(g[1]);if(year<100)year+=2000;if(month<1||month>12)continue;return year+'-'+String(month).padStart(2,'0')+'-28';}
-      else if(g.length===3){
-        if(isNaN(parseInt(g[1]))){day=parseInt(g[0]);month=mMap[g[1].slice(0,3)]||1;year=parseInt(g[2]);}
-        else if(g[0].length===4){year=parseInt(g[0]);month=parseInt(g[1]);day=parseInt(g[2]);}
-        else if(g[2].length===2&&g[0].length===2){
-          // YYMMDD formatı — yy mm dd (örn: 060826 = 2026-08-06)
-          const yy=parseInt(g[0]),mm=parseInt(g[1]),dd=parseInt(g[2]);
-          // 3 olası yorum dene: YYMMDD, DDMMYY, MMDDYY
-          const candidates=[
-            {year:2000+yy,month:mm,day:dd},
-            {year:2000+dd,month:mm,day:yy},
-            {year:2000+dd,month:yy,day:mm},
-          ];
-          for(const c of candidates){
-            if(c.year>=2024&&c.year<=2040&&c.month>=1&&c.month<=12&&c.day>=1&&c.day<=31){
-              year=c.year;month=c.month;day=c.day;break;
-            }
-          }
-          if(!year)continue;
-        }
-        if(year<100)year+=2000;
-        if(month>12&&day<=12)[day,month]=[month,day];
-        if(day<1||day>31||month<1||month>12||year<2024||year>2040)continue;
-        return year+'-'+String(month).padStart(2,'0')+'-'+String(day).padStart(2,'0');
-      }
-    }catch{}
-  }
-  return null;
-}
 let barcodeScanner = null;
 let rotationInterval = null;
 
