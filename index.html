@@ -398,16 +398,14 @@ input[type=number] { -moz-appearance:textfield; }
       </button>
     </div>
 
-    <div class="sidebar-section" style="flex:1">
+    <div class="sidebar-section" style="flex:1;display:flex;flex-direction:column;min-height:0">
       <div class="sidebar-label">Gruplar</div>
-      <div id="groups-nav" style="overflow:hidden;width:100%"></div>
-      <button class="add-group-btn" onclick="openNewGroupModal()">
-        <span style="font-size:14px;flex-shrink:0">+</span> <span class="add-label">Grup Oluştur</span>
+      <!-- Gruplar scroll edilebilir -->
+      <div id="groups-nav" style="flex:1;overflow-y:auto;overflow-x:hidden;min-height:0"></div>
+      <!-- Grup oluştur sabit -->
+      <button class="add-group-btn" onclick="openNewGroupModal()" style="flex-shrink:0;margin-top:6px">
+        <span style="font-size:14px;flex-shrink:0">+</span> <span class="add-label" id="new-group-btn">Grup Oluştur</span>
       </button>
-    </div>
-
-    <div style="padding:0 2px;margin-bottom:6px">
-      <button class="theme-toggle" onclick="cycleTheme()" id="theme-btn">🌙 <span class="add-label" id="theme-label">Karanlık Mod</span></button>
     </div>
 
     <div class="sidebar-footer">
@@ -714,6 +712,7 @@ input[type=number] { -moz-appearance:textfield; }
     <div class="tab-bar">
       <button class="tab-btn active" id="st-tab-profile" onclick="setStTab('profile')">👤 Profil</button>
       <button class="tab-btn" id="st-tab-notif" onclick="setStTab('notif')">🔔 Bildirimler</button>
+      <button class="tab-btn" id="st-tab-display" onclick="setStTab('display')">🎨 Görünüm</button>
       <button class="tab-btn" id="st-tab-danger" onclick="setStTab('danger')">⚠️ Hesap</button>
     </div>
 
@@ -759,6 +758,81 @@ input[type=number] { -moz-appearance:textfield; }
         <label style="display:flex;align-items:center;justify-content:space-between;background:var(--cream);padding:10px 12px;border-radius:var(--rad);cursor:pointer">
           <span style="font-size:13px;color:var(--dark)">⬜ Süresi geçmiş</span>
           <input type="checkbox" id="notif-expired" onchange="saveNotifSettings()" style="width:16px;height:16px;accent-color:var(--accent)">
+        </label>
+      </div>
+    </div>
+
+    <!-- Görünüm sekmesi -->
+    <div id="st-display" style="display:none">
+      <div style="font-size:12px;font-weight:600;color:var(--muted);letter-spacing:.5px;text-transform:uppercase;margin-bottom:12px">Tema</div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <label onclick="applyTheme('light')" style="display:flex;align-items:center;justify-content:space-between;background:var(--cream);padding:12px 14px;border-radius:var(--rad);cursor:pointer;border:2px solid transparent" id="theme-opt-light">
+          <div style="display:flex;align-items:center;gap:10px">
+            <span style="font-size:20px">☀️</span>
+            <div>
+              <div style="font-size:14px;font-weight:600;color:var(--dark)">Aydınlık</div>
+              <div style="font-size:11px;color:var(--muted)">Açık tema</div>
+            </div>
+          </div>
+          <span id="theme-check-light" style="display:none;color:var(--accent);font-size:18px">✓</span>
+        </label>
+        <label onclick="applyTheme('dark')" style="display:flex;align-items:center;justify-content:space-between;background:var(--cream);padding:12px 14px;border-radius:var(--rad);cursor:pointer;border:2px solid transparent" id="theme-opt-dark">
+          <div style="display:flex;align-items:center;gap:10px">
+            <span style="font-size:20px">🌙</span>
+            <div>
+              <div style="font-size:14px;font-weight:600;color:var(--dark)">Karanlık</div>
+              <div style="font-size:11px;color:var(--muted)">Koyu tema</div>
+            </div>
+          </div>
+          <span id="theme-check-dark" style="display:none;color:var(--accent);font-size:18px">✓</span>
+        </label>
+        <label onclick="applyTheme('system')" style="display:flex;align-items:center;justify-content:space-between;background:var(--cream);padding:12px 14px;border-radius:var(--rad);cursor:pointer;border:2px solid transparent" id="theme-opt-system">
+          <div style="display:flex;align-items:center;gap:10px">
+            <span style="font-size:20px">🖥️</span>
+            <div>
+              <div style="font-size:14px;font-weight:600;color:var(--dark)">Sistem</div>
+              <div style="font-size:11px;color:var(--muted)">Cihaz ayarına göre</div>
+            </div>
+          </div>
+          <span id="theme-check-system" style="display:none;color:var(--accent);font-size:18px">✓</span>
+        </label>
+      </div>
+    </div>
+
+
+    <!-- Görünüm sekmesi -->
+    <div id="st-display" style="display:none">
+      <div style="font-size:12px;font-weight:600;color:var(--muted);letter-spacing:.5px;text-transform:uppercase;margin-bottom:12px">Tema</div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <label onclick="applyTheme('light')" style="display:flex;align-items:center;justify-content:space-between;background:var(--cream);padding:12px 14px;border-radius:var(--rad);cursor:pointer" id="theme-opt-light">
+          <div style="display:flex;align-items:center;gap:10px">
+            <span style="font-size:20px">☀️</span>
+            <div>
+              <div style="font-size:14px;font-weight:600;color:var(--dark)">Aydınlık</div>
+              <div style="font-size:11px;color:var(--muted)">Açık tema</div>
+            </div>
+          </div>
+          <span id="theme-check-light" style="color:var(--accent);font-size:18px;font-weight:700"></span>
+        </label>
+        <label onclick="applyTheme('dark')" style="display:flex;align-items:center;justify-content:space-between;background:var(--cream);padding:12px 14px;border-radius:var(--rad);cursor:pointer" id="theme-opt-dark">
+          <div style="display:flex;align-items:center;gap:10px">
+            <span style="font-size:20px">🌙</span>
+            <div>
+              <div style="font-size:14px;font-weight:600;color:var(--dark)">Karanlık</div>
+              <div style="font-size:11px;color:var(--muted)">Koyu tema</div>
+            </div>
+          </div>
+          <span id="theme-check-dark" style="color:var(--accent);font-size:18px;font-weight:700"></span>
+        </label>
+        <label onclick="applyTheme('system')" style="display:flex;align-items:center;justify-content:space-between;background:var(--cream);padding:12px 14px;border-radius:var(--rad);cursor:pointer" id="theme-opt-system">
+          <div style="display:flex;align-items:center;gap:10px">
+            <span style="font-size:20px">🖥️</span>
+            <div>
+              <div style="font-size:14px;font-weight:600;color:var(--dark)">Sistem</div>
+              <div style="font-size:11px;color:var(--muted)">Cihaz ayarına göre</div>
+            </div>
+          </div>
+          <span id="theme-check-system" style="color:var(--accent);font-size:18px;font-weight:700"></span>
         </label>
       </div>
     </div>
@@ -2176,9 +2250,20 @@ const THEMES = ['system','light','dark'];
 const THEME_LABELS = {system:'Sistem', light:'Aydınlık', dark:'Karanlık'};
 const THEME_ICONS  = {system:'🌓', light:'☀️', dark:'🌙'};
 
+function updateThemeChecks() {
+  const cur = localStorage.getItem('rafix_theme') || 'system';
+  ['light','dark','system'].forEach(t => {
+    const el = document.getElementById('theme-check-'+t);
+    if (el) el.textContent = (t === cur) ? '✓' : '';
+    const opt = document.getElementById('theme-opt-'+t);
+    if (opt) opt.style.outline = (t === cur) ? '2px solid var(--accent)' : 'none';
+  });
+}
+
 function applyTheme(t) {
   document.documentElement.setAttribute('data-theme', t);
   localStorage.setItem('rafix_theme', t);
+  updateThemeChecks();
   const lbl = document.getElementById('theme-label');
   const btn = document.getElementById('theme-btn');
   if (lbl) lbl.textContent = THEME_LABELS[t] + ' Mod';
