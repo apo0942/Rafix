@@ -697,9 +697,11 @@ input[type=number] { -moz-appearance:textfield; }
     </div>
     <div class="tab-bar">
       <button class="tab-btn active" id="gm-tab-members" onclick="setGmTab('members')">👥 Üyeler</button>
+      <button class="tab-btn" id="gm-tab-roles" onclick="setGmTab('roles')">🔐 Rol İzinleri</button>
       <button class="tab-btn" id="gm-tab-settings" onclick="setGmTab('settings')">⚙️ Ayarlar</button>
     </div>
     <div id="gm-members-panel"></div>
+    <div id="gm-roles-panel" style="display:none"></div>
     <div id="gm-settings-panel" style="display:none"></div>
   </div>
 </div>
@@ -1587,7 +1589,8 @@ function setActive(gid) {
     : '';
   document.getElementById('manage-btn').style.display   = gid ? '' : 'none';
   document.getElementById('activity-btn').style.display  = gid ? '' : 'none';
-  document.getElementById('add-prod-btn').style.display  = ROLES[role]?.canAdd ? '' : 'none';
+  const _addPerms = activeGroup ? getRolePerms(activeGroup, role) : ROLES[role] || ROLES.viewer;
+  document.getElementById('add-prod-btn').style.display  = _addPerms?.canAdd ? '' : 'none';
   document.getElementById('nav-waste').classList.remove('active');
   render();
 }
@@ -1640,9 +1643,11 @@ function render() {
   grid.style.display = 'grid';
   empty.style.display = 'none';
 
-  const canEdit   = ROLES[role]?.canEdit;
-  const canDelete = ROLES[role]?.canDelete;
-  const canNote   = ROLES[role]?.canAdd || canEdit; // owner, admin, editor not ekleyebilir
+  // Önce özel grup izinlerine bak, yoksa ROLES default
+  const _perms    = gid ? getRolePerms(gid, role) : ROLES[role] || ROLES.viewer;
+  const canEdit   = _perms?.canEdit;
+  const canDelete = _perms?.canDelete;
+  const canNote   = _perms?.canAdd || canEdit;
 
   grid.innerHTML = list.map((p, idx) => {
     const d = daysLeft(p.expiry);
@@ -1998,6 +2003,130 @@ function renderGmMembers() {
     </div>`;
   }
   document.getElementById('gm-members-panel').innerHTML = html;
+}
+
+// ── Rol İzinleri Sistemi ─────────────────────────────────────────
+
+// Grup bazlı özel izinler cache — { groupId: { roleName: {canAdd,canEdit,...} } }
+const groupRolePerms = {};
+
+// Bir grubun rol izinlerini Supabase'den çek
+async function loadRolePerms(groupId) {
+  if (groupRolePerms[groupId]) return; // cache'de varsa tekrar çekme
+  try {
+    const rows = await sb(`role_permissions?group_id=eq.${groupId}&select=role,can_add,can_edit,can_delete,can_manage`);
+    groupRolePerms[groupId] = {};
+    (rows || []).forEach(r => {
+      groupRolePerms[groupId][r.role] = {
+        canAdd:    r.can_add,
+        canEdit:   r.can_edit,
+        canDelete: r.can_delete,
+        canManage: r.can_manage,
+      };
+    });
+  } catch(e) { console.warn('Rol izinleri yüklenemedi:', e); }
+}
+
+// Bir rol için izinleri al — önce özel, yoksa ROLES default
+function getRolePerms(groupId, role) {
+  const custom = groupRolePerms[groupId]?.[role];
+  if (custom) return custom;
+  const def = ROLES[role] || ROLES.viewer;
+  return { canAdd: def.canAdd, canEdit: def.canEdit, canDelete: def.canDelete, canManage: def.canManage };
+}
+
+// Rol izinleri panelini render et
+function renderGmRoles() {
+  const grp = groups.find(g => g.id === activeGroup);
+  if (!grp) return;
+  const isOwner   = grp.myRole === 'owner';
+  const canManage = getRolePerms(grp.id, grp.myRole).canManage || grp.myRole === 'owner';
+
+  if (!canManage) {
+    document.getElementById('gm-roles-panel').innerHTML =
+      `<div style="text-align:center;padding:2rem;color:var(--muted);font-size:13px">Bu ayarları değiştirme yetkiniz yok.</div>`;
+    return;
+  }
+
+  const editableRoles = [
+    { key: 'admin',  label: roleLabel('admin') },
+    { key: 'editor', label: roleLabel('editor') },
+    { key: 'staff',  label: roleLabel('staff') },
+    { key: 'viewer', label: roleLabel('viewer') },
+  ];
+
+  const permsConfig = [
+    { key: 'canAdd',    label: 'Ürün Ekle',    icon: '➕' },
+    { key: 'canEdit',   label: 'Ürün Düzenle', icon: '✏️' },
+    { key: 'canDelete', label: 'Ürün Sil',     icon: '🗑️' },
+    { key: 'canManage', label: 'Üye Yönet',    icon: '👥' },
+  ];
+
+  let html = `<div style="margin-bottom:12px;font-size:12px;color:var(--muted);background:var(--cream);padding:10px 12px;border-radius:var(--rad);line-height:1.5">
+    💡 Her rol için izinleri özelleştir. Değişiklikler bu gruba özeldir.
+  </div>`;
+
+  editableRoles.forEach(({ key: rk, label: rl }) => {
+    const perms = getRolePerms(grp.id, rk);
+    const color = ROLES[rk]?.color || '#888';
+
+    html += `<div style="border:1.5px solid var(--border);border-radius:var(--rad);padding:12px 14px;margin-bottom:10px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+        <div style="width:10px;height:10px;border-radius:50%;background:${color};flex-shrink:0"></div>
+        <div style="font-size:14px;font-weight:700;color:var(--dark)">${rl}</div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">`;
+
+    permsConfig.forEach(({ key: pk, label: pl, icon }) => {
+      const checked = perms[pk] ? 'checked' : '';
+      // owner her zaman tam yetki — disable
+      const disabled = rk === 'owner' ? 'disabled' : '';
+      html += `<label style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--white);border:1.5px solid var(--border);border-radius:8px;cursor:${disabled?'default':'pointer'};opacity:${disabled?'0.5':'1'}">
+        <input type="checkbox" ${checked} ${disabled}
+          onchange="updateRolePerm('${grp.id}','${rk}','${pk}',this.checked)"
+          style="width:16px;height:16px;accent-color:var(--accent);flex-shrink:0">
+        <span style="font-size:13px;color:var(--dark)">${icon} ${pl}</span>
+      </label>`;
+    });
+
+    html += `</div></div>`;
+  });
+
+  document.getElementById('gm-roles-panel').innerHTML = html;
+}
+
+// Tek bir izni güncelle
+async function updateRolePerm(groupId, role, permKey, value) {
+  // Cache güncelle
+  if (!groupRolePerms[groupId]) groupRolePerms[groupId] = {};
+  if (!groupRolePerms[groupId][role]) {
+    groupRolePerms[groupId][role] = { ...getRolePerms(groupId, role) };
+  }
+  groupRolePerms[groupId][role][permKey] = value;
+
+  // DB'ye kaydet — upsert (varsa güncelle, yoksa ekle)
+  const dbKey = { canAdd:'can_add', canEdit:'can_edit', canDelete:'can_delete', canManage:'can_manage' }[permKey];
+  const perms = groupRolePerms[groupId][role];
+  try {
+    await sb('role_permissions', {
+      method: 'POST',
+      prefer: 'return=minimal',
+      headers: { 'Prefer': 'resolution=merge-duplicates' },
+      body: {
+        group_id:   groupId,
+        role,
+        can_add:    perms.canAdd,
+        can_edit:   perms.canEdit,
+        can_delete: perms.canDelete,
+        can_manage: perms.canManage,
+      }
+    });
+    showToast(`✅ ${roleLabel(role)} — ${dbKey} güncellendi`);
+    // UI'ı da güncelle — render yeniden çek
+    render();
+  } catch(e) {
+    showToast('❌ Güncelleme hatası'); console.error(e);
+  }
 }
 
 function renderGmSettings() {
