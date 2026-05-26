@@ -1022,19 +1022,23 @@ const STATUS_CFG = {
 
 const ROLES = {
   owner:  {
-    label:"Sahip", corpLabel:"Şube Müdürü",
-    canAdd:true, canEdit:true, canDelete:true, canManage:true, color:"#C85A2A"
+    label:"Sahip",    corpLabel:"Şube Müdürü",
+    canAdd:true,  canEdit:true,  canDelete:true,  canManage:true,  color:"#C85A2A"
   },
   admin:  {
     label:"Yönetici", corpLabel:"Merkez Yönetici",
-    canAdd:true, canEdit:true, canDelete:true, canManage:true, color:"#4F46E5"
+    canAdd:true,  canEdit:true,  canDelete:true,  canManage:true,  color:"#4F46E5"
   },
   editor: {
-    label:"Editör", corpLabel:"Depo Görevlisi",
-    canAdd:true, canEdit:true, canDelete:false, canManage:false, color:"#2E7D52"
+    label:"Editör",   corpLabel:"Depo Görevlisi",
+    canAdd:true,  canEdit:true,  canDelete:false, canManage:false, color:"#2E7D52"
+  },
+  staff:  {
+    label:"Personel", corpLabel:"Raf Görevlisi",
+    canAdd:true,  canEdit:true,  canDelete:false, canManage:false, color:"#0369A1"
   },
   viewer: {
-    label:"İzleyici", corpLabel:"Kasiyer / Raf Görevlisi",
+    label:"İzleyici", corpLabel:"Kasiyer",
     canAdd:false, canEdit:false, canDelete:false, canManage:false, color:"#888"
   },
 };
@@ -1987,6 +1991,7 @@ function renderGmMembers() {
       </div>
       <div class="invite-hint">💡
         <strong>${roleLabel('editor')}</strong>: ekler & düzenler &nbsp;·&nbsp;
+        <strong>${roleLabel('staff')}</strong>: ekler & düzenler (silme yok) &nbsp;·&nbsp;
         <strong>${roleLabel('admin')}</strong>: silebilir de &nbsp;·&nbsp;
         <strong>${roleLabel('viewer')}</strong>: sadece görür
       </div>
