@@ -103,7 +103,7 @@ a{color:inherit;text-decoration:none}
 .app.collapsed{grid-template-columns:52px 1fr}
 
 /* ── Sidebar ── */
-.sidebar{background:var(--sidebar-bg);display:flex;flex-direction:column;padding:0.5rem 0.7rem;gap:0.5rem;position:sticky;top:0;height:100vh;overflow-y:auto;overflow-x:hidden;transition:padding .3s}
+.sidebar{background:var(--sidebar-bg);display:flex;flex-direction:column;padding:0.5rem 0.7rem;gap:0.5rem;position:sticky;top:0;height:100vh;overflow-y:auto;overflow-x:clip;transition:padding .3s}
 .app.collapsed .sidebar{padding:0.5rem 0.4rem}
 .sidebar-logo{font-family:var(--ff-serif);font-size:18px;color:var(--white);padding:0 4px 1rem;padding-top:3rem;border-bottom:1px solid rgba(255,255,255,0.08);letter-spacing:-.3px;display:flex;align-items:center;justify-content:space-between;gap:6px}
 .sidebar-logo span{color:var(--accent)}
@@ -114,11 +114,11 @@ a{color:inherit;text-decoration:none}
 .sidebar-section{margin-top:0.5rem;overflow:hidden}
 .sidebar-label{font-size:9px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:rgba(255,255,255,0.25);padding:0 8px 4px;white-space:nowrap;overflow:hidden;transition:max-height .2s,opacity .2s;max-height:30px}
 .app.collapsed .sidebar-label{max-height:0;opacity:0}
-.nav-btn{display:flex;align-items:center;gap:6px;width:100%;padding:8px 9px;border:none;background:none;border-radius:9px;color:rgba(255,255,255,0.5);font-size:13px;text-align:left;transition:all .15s;margin-bottom:2px;overflow:hidden;position:relative;box-sizing:border-box}
+.nav-btn{display:flex;align-items:center;gap:6px;width:100%;padding:8px 9px;border:none;background:none;border-radius:9px;color:rgba(255,255,255,0.5);font-size:13px;text-align:left;transition:all .15s;margin-bottom:0;overflow:hidden;position:relative;box-sizing:border-box;min-width:0}
 .nav-btn:hover{background:rgba(255,255,255,0.07);color:rgba(255,255,255,.85)}
 .nav-btn.active{background:rgba(255,255,255,0.11);color:var(--white);font-weight:600}
 .nav-btn .nav-icon{font-size:15px;width:20px;min-width:20px;text-align:center;flex-shrink:0}
-.nav-btn .nav-label{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;transition:opacity .2s}
+.nav-btn .nav-label{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;transition:opacity .2s;display:block}
 .app.collapsed .nav-btn .nav-label{max-width:0;opacity:0}
 .nav-btn .nav-count{background:#B52B2B;color:#fff;font-size:10px;font-weight:700;padding:1px 7px;border-radius:20px;flex-shrink:0;transition:opacity .2s}
 .app.collapsed .nav-btn .nav-count{opacity:0}
@@ -1363,25 +1363,28 @@ function renderGroupNode(node) {
   const isActive = activeGroup === node.id;
   const hasKids  = node.children.length > 0;
   const isOpen   = openGroups.has(node.id);
-  const ml       = node.depth * 12;
 
-  let html = '<div>';
-  html += `<div style="display:flex;align-items:center;margin-left:${ml}px;margin-bottom:2px">`;
-  html += `<button class="nav-btn${isActive?' active':''}" onclick="setActive('${node.id}')" title="${node.name}" style="flex:1;min-width:0">`;
-  html += `<span class="nav-icon">${icon}</span>`;
-  html += `<span class="nav-label">${node.name}</span>`;
+  // Sadece nav-btn'in sol padding'ini artır — sidebar genişliği değişmez
+  const extraPad = node.depth * 12;
+  let html = '';
+
+  html += `<div style="display:flex;align-items:center;margin-bottom:2px">`;
+  html += `<button class="nav-btn${isActive?' active':''}" onclick="setActive('${node.id}')" title="${node.name}" style="flex:1;min-width:0;padding-left:${9+extraPad}px">`;
+  html += `<span class="nav-icon" style="flex-shrink:0">${icon}</span>`;
+  html += `<span class="nav-label" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${node.name}</span>`;
   if (count > 0) html += `<span class="nav-count">${count}</span>`;
-  html += '</button>';
+  html += `</button>`;
   if (hasKids) {
-    html += `<button onclick="toggleGroup('${node.id}',event)" style="flex-shrink:0;width:24px;height:28px;background:rgba(255,255,255,0.06);border:none;color:rgba(255,255,255,0.45);cursor:pointer;border-radius:6px;font-size:9px;margin-left:3px;transform:rotate(${isOpen?'90':'0'}deg);transition:transform .15s">▶</button>`;
+    html += `<button onclick="toggleGroup('${node.id}',event)" style="flex-shrink:0;width:22px;height:28px;background:rgba(255,255,255,0.06);border:none;color:rgba(255,255,255,0.45);cursor:pointer;border-radius:6px;font-size:9px;margin-left:2px;transform:rotate(${isOpen?'90':'0'}deg);transition:transform .15s">▶</button>`;
   }
-  html += '</div>';
+  html += `</div>`;
+
   if (hasKids && isOpen) {
     node.children.forEach(child => { html += renderGroupNode(child); });
   }
-  html += '</div>';
   return html;
 }
+
 
 function renderSidebar() {
   const pc = countOf('personal');
