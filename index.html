@@ -1968,7 +1968,7 @@ function renderGmMembers() {
       </div>
       ${canManage && m.user_id !== me.id ? `
         <select onchange="changeRole('${m.user_id}',this.value)" style="padding:5px 9px;border:1.5px solid var(--border);border-radius:8px;font-family:var(--ff-sans);font-size:12px;background:var(--cream);outline:none;color:var(--dark)">
-          ${Object.entries(ROLES).filter(([k])=>k!=='owner').map(([k,v])=>`<option value="${k}"${m.role===k?' selected':''}>${v.label}</option>`).join('')}
+          ${Object.entries(ROLES).filter(([k])=>k!=='owner').map(([k,v])=>`<option value="${k}"${m.role===k?' selected':''}>${roleLabel(k)}</option>`).join('')}
         </select>
         <button onclick="removeMember('${m.user_id}')" style="padding:5px 10px;border:1.5px solid #F0C4C4;background:var(--danger-bg);border-radius:8px;font-size:12px;color:var(--danger);font-family:var(--ff-sans)">Çıkar</button>
       ` : ''}
@@ -1981,11 +1981,15 @@ function renderGmMembers() {
       <div class="invite-row">
         <input id="inv-user" placeholder="Kullanıcı adı" style="flex:1;min-width:120px">
         <select id="inv-role">
-          ${Object.entries(ROLES).filter(([k])=>k!=='owner').map(([k,v])=>`<option value="${k}">${v.label}</option>`).join('')}
+          ${Object.entries(ROLES).filter(([k])=>k!=='owner').map(([k,v])=>`<option value="${k}">${roleLabel(k)}</option>`).join('')}
         </select>
         <button onclick="doInvite()" style="padding:9px 16px;background:var(--accent);color:#fff;border:none;border-radius:var(--rad);font-family:var(--ff-sans);font-size:13px;font-weight:600;white-space:nowrap">Davet Et</button>
       </div>
-      <div class="invite-hint">💡 <strong>Editör</strong>: ekler & düzenler &nbsp;·&nbsp; <strong>Yönetici</strong>: silebilir de &nbsp;·&nbsp; <strong>İzleyici</strong>: sadece görür</div>
+      <div class="invite-hint">💡
+        <strong>${roleLabel('editor')}</strong>: ekler & düzenler &nbsp;·&nbsp;
+        <strong>${roleLabel('admin')}</strong>: silebilir de &nbsp;·&nbsp;
+        <strong>${roleLabel('viewer')}</strong>: sadece görür
+      </div>
     </div>`;
   }
   document.getElementById('gm-members-panel').innerHTML = html;
