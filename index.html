@@ -413,6 +413,14 @@ input[type=number] { -moz-appearance:textfield; }
         <span class="nav-label">Kişisel</span>
         <span class="nav-count" id="personal-badge" style="display:none">0</span>
       </button>
+      <button class="nav-btn" id="nav-overview" onclick="showPage('overview')" style="display:none">
+        <span class="nav-icon">🏠</span>
+        <span class="nav-label">Genel Bakış</span>
+      </button>
+      <button class="nav-btn" id="nav-overview" onclick="showPage('overview')" style="display:none">
+        <span class="nav-icon">🏠</span>
+        <span class="nav-label">Genel Bakış</span>
+      </button>
       <button class="nav-btn" id="nav-stats" onclick="showPage('stats')">
         <span class="nav-icon">📊</span>
         <span class="nav-label">İstatistikler</span>
@@ -464,6 +472,17 @@ input[type=number] { -moz-appearance:textfield; }
       <div class="stat-card s-warn"><div class="stat-label">Yaklaşıyor ≤ 7 gün</div><div class="stat-val" id="s-warn" style="color:var(--warn)">0</div></div>
       <div class="stat-card s-expired"><div class="stat-label">Süresi Geçmiş</div><div class="stat-val" id="s-expired" style="color:var(--muted)">0</div></div>
     </div>
+    <!-- Plan limiti göstergesi -->
+    <div id="plan-limit-bar" style="display:none;margin-bottom:10px;background:var(--cream);border-radius:var(--rad);padding:8px 12px;display:flex;align-items:center;justify-content:space-between;font-size:12px">
+      <span id="plan-limit-text" style="color:var(--muted)"></span>
+      <button onclick="showUpgradeModal('urun_limiti')" style="font-size:11px;font-weight:700;color:var(--accent);background:none;border:none;cursor:pointer;font-family:var(--ff-sans)">Plan Yükselt →</button>
+    </div>
+
+    <!-- Plan limiti göstergesi -->
+    <div id="plan-limit-bar" style="display:none;margin-bottom:10px;background:var(--cream);border-radius:var(--rad);padding:8px 12px;align-items:center;justify-content:space-between;font-size:12px">
+      <span id="plan-limit-text" style="color:var(--muted)"></span>
+      <button onclick="showUpgradeModal('urun_limiti')" style="font-size:11px;font-weight:700;color:var(--accent);background:none;border:none;cursor:pointer;font-family:var(--ff-sans);flex-shrink:0;margin-left:8px">Plan Yükselt →</button>
+    </div>
 
     <div class="filter-bar" id="home-filter-bar">
       <button class="filter-pill active" onclick="setFilter('all',this)">Tümü</button>
@@ -480,6 +499,16 @@ input[type=number] { -moz-appearance:textfield; }
           <option value="name-desc">Z → A</option>
         </select>
       </div>
+    </div>
+
+    <!-- Genel Bakış Sayfası (kurumsal için) -->
+    <div id="overview-page" style="display:none">
+      <div id="overview-content"></div>
+    </div>
+
+    <!-- Genel Bakış Sayfası (kurumsal için) -->
+    <div id="overview-page" style="display:none">
+      <div id="overview-content"></div>
     </div>
 
     <div class="products-grid" id="products-grid"></div>
@@ -1266,11 +1295,12 @@ async function doLogin() {
 
   // Profil bilgilerini çek (is_admin + account_type + company_name)
   try {
-    const profile = await sb(`profiles?id=eq.${me.id}&select=is_admin,account_type,company_name`);
+    const profile = await sb(`profiles?id=eq.${me.id}&select=is_admin,account_type,company_name,plan`);
     if (profile?.[0]) {
       me.is_admin      = profile[0].is_admin      || false;
       me.account_type  = profile[0].account_type  || 'bireysel';
       me.company_name  = profile[0].company_name  || null;
+      me.plan          = profile[0].plan          || null; // ödeme sonrası set edilir
       if (me.is_admin)     console.log('[Rafix] Admin modu aktif ✓');
       if (me.account_type === 'kurumsal') console.log('[Rafix] Kurumsal hesap:', me.company_name);
     }
@@ -1289,7 +1319,12 @@ async function doLogin() {
   await loadAll();
   setupUserUI();
   showApp(true);
-  render();
+  // Kurumsal hesaplarda giriş sonrası Genel Bakış sayfasını aç
+  if (me?.account_type === 'kurumsal') {
+    showPage('overview');
+  } else {
+    render();
+  }
   showToast(`Hoş geldin, ${me.username}!`);
   checkNotificationsOnLoad();
 }
@@ -1827,14 +1862,68 @@ async function deleteProd(id) {
 }
 
 // ── Groups ────────────────────────────────────────────────────────
+// ── Plan Limitleri ───────────────────────────────────────────────
+// maxGroups: açılabilecek max şube/grup sayısı
+// maxProds:  toplam ürün limiti (0 = sınırsız)
+// maxMembers: grup başına max üye (0 = sınırsız)
+const PLAN_LIMITS = {
+  // Bireysel
+  bireysel_free: {
+    label: 'Ücretsiz',       maxGroups: 1,  maxProds: 20,   maxMembers: 2,
+  },
+  bireysel_pro: {
+    label: 'Bireysel Pro',   maxGroups: 3,  maxProds: 0,    maxMembers: 10,
+  },
+  // Kurumsal
+  kurumsal_free: {
+    label: 'Deneme',         maxGroups: 1,  maxProds: 50,   maxMembers: 3,
+  },
+  kurumsal_starter: {
+    label: 'Başlangıç',      maxGroups: 5,  maxProds: 0,    maxMembers: 5,
+  },
+  kurumsal_growth: {
+    label: 'Büyüme',         maxGroups: 25, maxProds: 0,    maxMembers: 15,
+  },
+  kurumsal_pro: {
+    label: 'Pro',            maxGroups: 100,maxProds: 0,    maxMembers: 0,
+  },
+  kurumsal_enterprise: {
+    label: 'Enterprise',     maxGroups: 0,  maxProds: 0,    maxMembers: 0,
+  },
+};
+
+function getUserPlan() {
+  if (me?.is_admin) return 'kurumsal_enterprise';
+  const plan = me?.plan || '';
+  if (plan) return plan;
+  return me?.account_type === 'kurumsal' ? 'kurumsal_free' : 'bireysel_free';
+}
+
+function getPlanLimits() {
+  return PLAN_LIMITS[getUserPlan()] || PLAN_LIMITS.bireysel_free;
+}
+
+function getMaxGroups()   { const l = getPlanLimits(); return l.maxGroups  || 9999; }
+function getMaxProds()    { const l = getPlanLimits(); return l.maxProds   || 0;    }  // 0 = sınırsız
+function getMaxMembers()  { const l = getPlanLimits(); return l.maxMembers || 0;    }
+
+// Toplam ürün sayısı (tüm gruplar dahil)
+function getTotalProdCount() {
+  return Object.values(prodMap).reduce((sum, arr) => sum + (arr?.length || 0), 0);
+}
+
 function openNewGroupModal() {
-  // Bireysel — admin değilse 1 grup limiti
-  if (!me?.is_admin && me?.account_type !== 'kurumsal') {
-    const ownedGroups = groups.filter(g => g.myRole === 'owner');
-    if (ownedGroups.length >= 1) {
+  const ownedGroups = groups.filter(g => g.myRole === 'owner');
+  const maxGroups   = getMaxGroups();
+
+  if (!me?.is_admin && ownedGroups.length >= maxGroups) {
+    // Bireysel için eski mesaj, kurumsal için farklı mesaj
+    if (me?.account_type === 'kurumsal') {
+      showUpgradeModal('kurumsal_limit');
+    } else {
       showUpgradeModal('ikinci_grup');
-      return;
     }
+    return;
   }
 
   document.getElementById('newgroup-name').value = '';
@@ -2165,6 +2254,85 @@ async function updateRolePerm(groupId, role, permKey, value) {
   }
 }
 
+// ── Genel Bakış (Kurumsal) ────────────────────────────────────────
+function renderOverview() {
+  const el = document.getElementById('overview-content');
+  if (!el) return;
+
+  // Tüm gruplardaki toplam istatistikler
+  let totalProds = 0, totalDanger = 0, totalWarn = 0, totalExpired = 0;
+  const branchRows = [];
+
+  // Kişisel + tüm gruplar
+  const allScopes = [null, ...groups.map(g => g.id)];
+
+  allScopes.forEach(gid => {
+    const prods = prodMap[gid] || [];
+    const name  = gid ? (groups.find(g=>g.id===gid)?.name || gid) : (me?.company_name || 'Genel Depo');
+    let d=0, w=0, e=0;
+    prods.forEach(p => {
+      const dl = daysLeft(p.expiry);
+      if (dl < 0) e++;
+      else if (dl <= 3) d++;
+      else if (dl <= 7) w++;
+    });
+    totalProds   += prods.length;
+    totalDanger  += d;
+    totalWarn    += w;
+    totalExpired += e;
+    if (prods.length > 0 || gid === null) {
+      branchRows.push({ name, count: prods.length, danger: d, warn: w, expired: e, gid });
+    }
+  });
+
+  el.innerHTML = `
+    <!-- Özet istatistikler -->
+    <div class="stats-grid" style="margin-bottom:1.5rem">
+      <div class="stat-card"><div class="stat-label">Toplam Ürün</div><div class="stat-val" style="color:var(--dark)">${totalProds}</div></div>
+      <div class="stat-card s-danger"><div class="stat-label">Kritik ≤ 3 gün</div><div class="stat-val" style="color:var(--danger)">${totalDanger}</div></div>
+      <div class="stat-card s-warn"><div class="stat-label">Yaklaşıyor ≤ 7 gün</div><div class="stat-val" style="color:var(--warn)">${totalWarn}</div></div>
+      <div class="stat-card s-expired"><div class="stat-label">Süresi Geçmiş</div><div class="stat-val" style="color:var(--muted)">${totalExpired}</div></div>
+    </div>
+
+    <!-- Şube tablosu -->
+    <div style="font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--muted);margin-bottom:10px">Şube / Grup Durumu</div>
+    <div style="border:1.5px solid var(--border);border-radius:var(--rad-lg);overflow:hidden">
+      <table style="width:100%;border-collapse:collapse;font-size:13px">
+        <thead>
+          <tr style="background:var(--cream)">
+            <th style="padding:10px 14px;text-align:left;font-weight:600;color:var(--muted);font-size:11px">ŞUBE / GRUP</th>
+            <th style="padding:10px 14px;text-align:center;font-weight:600;color:var(--muted);font-size:11px">TOPLAM</th>
+            <th style="padding:10px 14px;text-align:center;font-weight:600;color:var(--danger);font-size:11px">🔴 KRİTİK</th>
+            <th style="padding:10px 14px;text-align:center;font-weight:600;color:var(--warn);font-size:11px">🟡 YAKLAŞIYOR</th>
+            <th style="padding:10px 14px;text-align:center;font-weight:600;color:var(--muted);font-size:11px">⬜ GEÇMİŞ</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${branchRows.map((b, i) => `
+            <tr style="border-top:1px solid var(--border);cursor:pointer;transition:background .1s"
+              onclick="setActive(${b.gid ? "'"+b.gid+"'" : 'null'})"
+              onmouseover="this.style.background='var(--cream)'"
+              onmouseout="this.style.background=''">
+              <td style="padding:10px 14px;font-weight:600;color:var(--dark)">${b.name}</td>
+              <td style="padding:10px 14px;text-align:center;color:var(--dark)">${b.count}</td>
+              <td style="padding:10px 14px;text-align:center;color:${b.danger>0?'var(--danger)':'var(--muted)'}">
+                ${b.danger > 0 ? `<strong>${b.danger}</strong>` : b.danger}
+              </td>
+              <td style="padding:10px 14px;text-align:center;color:${b.warn>0?'var(--warn)':'var(--muted)'}">
+                ${b.warn > 0 ? `<strong>${b.warn}</strong>` : b.warn}
+              </td>
+              <td style="padding:10px 14px;text-align:center;color:var(--muted)">${b.expired}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+    <div style="font-size:11px;color:var(--muted);margin-top:8px;text-align:right">
+      Bir satıra tıklayarak o şubeye geçebilirsiniz.
+    </div>
+  `;
+}
+
 function renderGmSettings() {
   const grp = groups.find(g=>g.id===activeGroup); if (!grp) return;
   const isOwner  = grp.myRole === 'owner';
@@ -2206,8 +2374,9 @@ async function doInvite() {
   if (!target) { showToast('Kullanıcı bulunamadı.'); return; }
   const grp = groups.find(g=>g.id===activeGroup);
   if (grp.members?.find(m=>m.user_id===target.id)) { showToast('Bu kullanıcı zaten üye.'); return; }
-  // Ücretsiz plan: max 1 üye (kendin + 1 kişi = 2 toplam)
-  if (!me?.is_admin && grp.members?.length >= 2) {
+  // Plan bazlı üye limiti
+  const maxMem = getMaxMembers();
+  if (!me?.is_admin && maxMem > 0 && (grp.members?.length || 0) >= maxMem) {
     showUpgradeModal('fazla_uye');
     return;
   }
@@ -2986,12 +3155,16 @@ let prodImageBase64 = null;
 
 function showUpgradeModal(reason) {
   const msgs = {
-    'ikinci_grup': 'Ücretsiz planda 1 grup oluşturabilirsiniz. Daha fazla grup için plan yükseltin.',
-    'fazla_uye':   'Ücretsiz planda grubunuzda en fazla 1 ek üye olabilir (toplam 2 kişi). Daha fazla üye için plan yükseltin.',
+    'ikinci_grup':    `Mevcut planınızda en fazla ${getMaxGroups()} grup oluşturabilirsiniz. Daha fazla grup için plan yükseltin.`,
+    'fazla_uye':      `Mevcut planınızda bu grupta en fazla ${getMaxMembers()} üye olabilir. Daha fazla üye için plan yükseltin.`,
+    'kurumsal_limit': `Mevcut planınızın şube limitine (${getMaxGroups()}) ulaştınız. Daha fazla şube için planınızı yükseltin.`,
+    'urun_limiti':    `Mevcut planınızda en fazla ${getMaxProds()} ürün ekleyebilirsiniz. Sınırsız ürün için plan yükseltin.`,
   };
   const titles = {
-    'ikinci_grup': 'İkinci Grup İçin Plan Gerekli',
-    'fazla_uye':   'Daha Fazla Üye İçin Plan Gerekli',
+    'ikinci_grup':    'Grup Limiti Aşıldı',
+    'fazla_uye':      'Üye Limiti Aşıldı',
+    'kurumsal_limit': 'Şube Limiti Aşıldı',
+    'urun_limiti':    'Ürün Limiti Aşıldı',
   };
   document.getElementById('upgrade-title').textContent = titles[reason] || 'Plan Yükselt';
   document.getElementById('upgrade-msg').textContent   = msgs[reason]  || '';
