@@ -2148,10 +2148,6 @@ function getGroupRoleLabel(groupId, roleKey) {
   }
   return roleLabel(roleKey);
 }
-
-// Grup bazlı özel rol isimleri cache — { groupId: { roleKey: customLabel } }
-const groupRoleLabels = {};
-
 async function loadRoleLabels(groupId) {
   if (groupRoleLabels[groupId]) return;
   try {
@@ -2293,9 +2289,6 @@ async function updateRoleLabel(groupId, roleKey, newLabel) {
       console.error(e);
     }
   }
-}
-
-// Tek bir izni guncelle (eski fonksiyon devam ediyor)
 }
 
 // Tek bir izni güncelle
