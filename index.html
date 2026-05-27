@@ -862,43 +862,6 @@ input[type=number] { -moz-appearance:textfield; }
       </div>
     </div>
 
-    <!-- Görünüm sekmesi -->
-    <div id="st-display" style="display:none">
-      <div style="font-size:12px;font-weight:600;color:var(--muted);letter-spacing:.5px;text-transform:uppercase;margin-bottom:12px">Tema</div>
-      <div style="display:flex;flex-direction:column;gap:8px">
-        <label onclick="applyTheme('light')" style="display:flex;align-items:center;justify-content:space-between;background:var(--cream);padding:12px 14px;border-radius:var(--rad);cursor:pointer;border:2px solid transparent" id="theme-opt-light">
-          <div style="display:flex;align-items:center;gap:10px">
-            <span style="font-size:20px">☀️</span>
-            <div>
-              <div style="font-size:14px;font-weight:600;color:var(--dark)">Aydınlık</div>
-              <div style="font-size:11px;color:var(--muted)">Açık tema</div>
-            </div>
-          </div>
-          <span id="theme-check-light" style="display:none;color:var(--accent);font-size:18px">✓</span>
-        </label>
-        <label onclick="applyTheme('dark')" style="display:flex;align-items:center;justify-content:space-between;background:var(--cream);padding:12px 14px;border-radius:var(--rad);cursor:pointer;border:2px solid transparent" id="theme-opt-dark">
-          <div style="display:flex;align-items:center;gap:10px">
-            <span style="font-size:20px">🌙</span>
-            <div>
-              <div style="font-size:14px;font-weight:600;color:var(--dark)">Karanlık</div>
-              <div style="font-size:11px;color:var(--muted)">Koyu tema</div>
-            </div>
-          </div>
-          <span id="theme-check-dark" style="display:none;color:var(--accent);font-size:18px">✓</span>
-        </label>
-        <label onclick="applyTheme('system')" style="display:flex;align-items:center;justify-content:space-between;background:var(--cream);padding:12px 14px;border-radius:var(--rad);cursor:pointer;border:2px solid transparent" id="theme-opt-system">
-          <div style="display:flex;align-items:center;gap:10px">
-            <span style="font-size:20px">🖥️</span>
-            <div>
-              <div style="font-size:14px;font-weight:600;color:var(--dark)">Sistem</div>
-              <div style="font-size:11px;color:var(--muted)">Cihaz ayarına göre</div>
-            </div>
-          </div>
-          <span id="theme-check-system" style="display:none;color:var(--accent);font-size:18px">✓</span>
-        </label>
-      </div>
-    </div>
-
 
     <!-- Görünüm sekmesi -->
     <div id="st-display" style="display:none">
@@ -2196,7 +2159,6 @@ function renderGmRoles() {
   const editableRoles = [
     { key: 'admin',  label: roleLabel('admin') },
     { key: 'editor', label: roleLabel('editor') },
-    { key: 'staff',  label: roleLabel('staff') },
     { key: 'viewer', label: roleLabel('viewer') },
   ];
 
@@ -2650,7 +2612,10 @@ function updateThemeChecks() {
   const cur = localStorage.getItem('rafix_theme') || 'system';
   ['light','dark','system'].forEach(t => {
     const el = document.getElementById('theme-check-'+t);
-    if (el) el.textContent = (t === cur) ? '✓' : '';
+    if (el) {
+      el.textContent = (t === cur) ? '✓' : '';
+      el.style.display = (t === cur) ? '' : 'none';
+    }
     const opt = document.getElementById('theme-opt-'+t);
     if (opt) opt.style.outline = (t === cur) ? '2px solid var(--accent)' : 'none';
   });
