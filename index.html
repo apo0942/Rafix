@@ -466,6 +466,89 @@ function exportWastePDF() {
   exportToPDF(getWasteExportProds(), `İsraf Raporu — ${grpName}`, 'Rafix_Israf');
 }
 
+
+// ── Global Admin Sistemi ──────────────────────────────────────────
+
+// Mevcut global adminleri listele
+async function loadGlobalAdminList(groupId) {
+  const el = document.getElementById('global-admin-list');
+  if (!el) return;
+  try {
+    // Bu grubun sahibini bul
+    const ownerMember = groups.find(g=>g.id===groupId)?.members?.find(m=>m.role==='owner');
+    if (!ownerMember) return;
+
+    const admins = await sb(`profiles?global_admin_owner_id=eq.${ownerMember.user_id}&is_global_admin=eq.true&select=id,username,full_name`);
+    if (!admins?.length) {
+      el.innerHTML = '<div style="font-size:12px;color:var(--muted);padding:4px 0">Henüz global admin yok.</div>';
+      return;
+    }
+    el.innerHTML = admins.map(a => `
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:7px 10px;background:var(--cream);border-radius:var(--rad);margin-bottom:6px">
+        <div>
+          <span style="font-size:13px;font-weight:600;color:var(--dark)">🌐 ${a.full_name || a.username}</span>
+          <span style="font-size:11px;color:var(--muted);margin-left:6px">@${a.username}</span>
+        </div>
+        <button onclick="removeGlobalAdmin('${a.id}')"
+          style="font-size:11px;color:var(--danger);background:none;border:none;cursor:pointer;font-family:var(--ff-sans);padding:2px 6px">
+          Kaldır
+        </button>
+      </div>
+    `).join('');
+  } catch(e) { console.warn('Global admin listesi hatası:', e); }
+}
+
+// Global admin ata
+async function addGlobalAdmin(groupId) {
+  const username = document.getElementById('ga-username')?.value.trim();
+  if (!username) { showToast('Kullanıcı adı girin.'); return; }
+
+  try {
+    // Kullanıcıyı bul
+    const found = await sb(`profiles?username=eq.${encodeURIComponent(username)}&select=id,username`);
+    if (!found?.length) { showToast('Kullanıcı bulunamadı: ' + username); return; }
+
+    const targetUser = found[0];
+
+    // Grubun sahibini bul — global_admin_owner_id olarak kullan
+    const ownerMember = groups.find(g=>g.id===groupId)?.members?.find(m=>m.role==='owner');
+    if (!ownerMember) { showToast('Grup sahibi bulunamadı.'); return; }
+
+    // Global admin yap
+    await sb(`profiles?id=eq.${targetUser.id}`, {
+      method: 'PATCH',
+      body: {
+        is_global_admin: true,
+        global_admin_owner_id: ownerMember.user_id,
+      }
+    });
+
+    document.getElementById('ga-username').value = '';
+    showToast(`✅ ${username} global admin olarak atandı. Bir sonraki girişinde tüm şubeleri görecek.`);
+    loadGlobalAdminList(groupId);
+  } catch(e) {
+    showToast('Hata: ' + e.message.slice(0,60));
+    console.error(e);
+  }
+}
+
+// Global admin yetkisini kaldır
+async function removeGlobalAdmin(userId) {
+  if (!confirm('Bu kullanıcının global admin yetkisini kaldırmak istediğinize emin misiniz?')) return;
+  try {
+    await sb(`profiles?id=eq.${userId}`, {
+      method: 'PATCH',
+      body: { is_global_admin: false, global_admin_owner_id: null }
+    });
+    showToast('Global admin yetkisi kaldırıldı.');
+    // Paneli yenile
+    const grp = groups.find(g=>g.id===activeGroup);
+    if (grp) loadGlobalAdminList(grp.id);
+  } catch(e) {
+    showToast('Hata: ' + e.message.slice(0,60));
+  }
+}
+
 </script>
 </head>
 <body>
@@ -1425,13 +1508,15 @@ async function doLogin() {
 
   // Profil bilgilerini çek (is_admin + account_type + company_name)
   try {
-    const profile = await sb(`profiles?id=eq.${me.id}&select=is_admin,account_type,company_name,plan,full_name`);
+    const profile = await sb(`profiles?id=eq.${me.id}&select=is_admin,account_type,company_name,plan,full_name,is_global_admin,global_admin_owner_id`);
     if (profile?.[0]) {
-      me.is_admin      = profile[0].is_admin      || false;
-      me.account_type  = profile[0].account_type  || 'bireysel';
-      me.company_name  = profile[0].company_name  || null;
-      me.plan          = profile[0].plan          || null;
-      me.full_name     = profile[0].full_name      || null;
+      me.is_admin          = profile[0].is_admin          || false;
+      me.account_type      = profile[0].account_type      || 'bireysel';
+      me.company_name      = profile[0].company_name      || null;
+      me.plan              = profile[0].plan              || null;
+      me.full_name         = profile[0].full_name         || null;
+      me.is_global_admin   = profile[0].is_global_admin   || false;
+      me.global_admin_owner_id = profile[0].global_admin_owner_id || null;
       if (me.is_admin)     console.log('[Rafix] Admin modu aktif ✓');
       if (me.account_type === 'kurumsal') console.log('[Rafix] Kurumsal hesap:', me.company_name);
     }
@@ -1586,15 +1671,37 @@ async function logout() {
 // ── Load ─────────────────────────────────────────────────────────
 async function loadAll() {
   const memberships = await sbWithRefresh(`group_members?user_id=eq.${me.id}&select=group_id,role`);
-  const groupIds = memberships.map(m => m.group_id);
+  const memberGroupIds = memberships.map(m => m.group_id);
 
-  if (groupIds.length > 0) {
-    const rawGroups = await sbWithRefresh(`groups?id=in.(${groupIds.join(',')})&select=*`);
-    const allMembers = await sbWithRefresh(`group_members?group_id=in.(${groupIds.join(',')})&select=*`);
+  // Global admin: firm'daki TÜM grupları çek (kendi oluşturduğu)
+  // me.is_global_admin = true ise created_by üzerinden tüm gruplar gelir
+  let globalGroupIds = [];
+  if (me?.is_global_admin && me?.global_admin_owner_id) {
+    try {
+      // Global admin'in firmasının owner'ına ait tüm grupları çek
+      const ownerGroups = await sbWithRefresh(
+        `groups?select=id&order=created_at.asc`
+      );
+      // Sadece firma sahibinin gruplarını filtrele
+      globalGroupIds = (ownerGroups || [])
+        .map(g => g.id)
+        .filter(id => !memberGroupIds.includes(id));
+      console.log('[Rafix] Global admin: ek', globalGroupIds.length, 'grup yüklendi');
+    } catch(e) { console.warn('Global admin grup yükleme hatası:', e); }
+  }
+
+  const allGroupIds = [...new Set([...memberGroupIds, ...globalGroupIds])];
+
+  if (allGroupIds.length > 0) {
+    const rawGroups  = await sbWithRefresh(`groups?id=in.(${allGroupIds.join(',')})&select=*`);
+    const allMembers = await sbWithRefresh(`group_members?group_id=in.(${allGroupIds.join(',')})&select=*`);
     groups = rawGroups.map(g => ({
       ...g,
-      myRole: memberships.find(m=>m.group_id===g.id)?.role || 'viewer',
-      members: allMembers.filter(m=>m.group_id===g.id)
+      // Global admin olarak eklenen gruplarda 'admin' rolü ver
+      myRole: memberships.find(m=>m.group_id===g.id)?.role
+               || (globalGroupIds.includes(g.id) ? 'admin' : 'viewer'),
+      members: allMembers.filter(m=>m.group_id===g.id),
+      isGlobalAccess: globalGroupIds.includes(g.id), // global erişimle mi geldi
     }));
   } else {
     groups = [];
@@ -1608,7 +1715,7 @@ async function loadAll() {
     prodMap[g.id] = gp.map(normalizeProduct);
   }));
 
-  users = await sbWithRefresh('profiles?select=id,username,email');
+  users = await sbWithRefresh('profiles?select=id,username,email,full_name');
 }
 
 // DB → uygulama veri dönüşümü
