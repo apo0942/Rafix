@@ -323,7 +323,150 @@ input[type=number] { -moz-appearance:textfield; }
 #groups-nav::-webkit-scrollbar-thumb:hover { background:rgba(255,255,255,0.35) }
 #groups-nav { scrollbar-width:thin;scrollbar-color:rgba(255,255,255,0.18) rgba(255,255,255,0.04) }
 </style>
-  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js">
+// ── PDF & Excel Export ────────────────────────────────────────────
+
+// Tarih formatı yardımcısı
+function formatDateTR(dateStr) {
+  if (!dateStr) return '-';
+  const [y,m,d] = dateStr.split('-');
+  return `${d}/${m}/${y}`;
+}
+
+// Aktif gruptaki ürünleri al
+function getExportProds() {
+  const gid = activeGroup;
+  return (prodMap[gid] || []).map(p => ({
+    'Ürün Adı':    p.name || '',
+    'Marka':       p.brand || '',
+    'Kategori':    p.category || '',
+    'SKT':         formatDateTR(p.expiry),
+    'Kalan Gün':   daysLeft(p.expiry),
+    'Durum':       daysLeft(p.expiry) < 0 ? 'Geçmiş' : daysLeft(p.expiry) <= 3 ? 'Kritik' : daysLeft(p.expiry) <= 7 ? 'Yaklaşıyor' : 'Taze',
+    'Miktar':      p.qty || '',
+    'Not':         p.note || '',
+  }));
+}
+
+// İsraf raporundaki ürünleri al
+function getWasteExportProds() {
+  const gid = activeGroup;
+  const now = new Date(); now.setHours(0,0,0,0);
+  return (prodMap[gid] || [])
+    .filter(p => daysLeft(p.expiry) < 0)
+    .map(p => ({
+      'Ürün Adı':    p.name || '',
+      'Marka':       p.brand || '',
+      'Kategori':    p.category || '',
+      'SKT':         formatDateTR(p.expiry),
+      'Geçen Gün':   Math.abs(daysLeft(p.expiry)),
+      'Miktar':      p.qty || '',
+    }));
+}
+
+// ── Excel Export ──────────────────────────────────────────────────
+function exportToExcel(data, filename) {
+  if (!data.length) { showToast('Dışa aktarılacak veri yok.'); return; }
+  const headers = Object.keys(data[0]);
+  const rows    = data.map(r => headers.map(h => r[h]));
+  // CSV oluştur (BOM ile UTF-8)
+  const csv = [headers.join(','), ...rows.map(r => r.map(v =>
+    typeof v === 'string' && (v.includes(',') || v.includes('"'))
+      ? `"${v.replace(/"/g,'""')}"` : v
+  ).join(','))].join('\n');
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename + '.csv';
+  a.click();
+  showToast('Excel dosyası indirildi ✓');
+}
+
+function exportStatsExcel() {
+  const grpName = activeGroup ? (groups.find(g=>g.id===activeGroup)?.name || 'Grup') : 'Kisisel';
+  exportToExcel(getExportProds(), `Rafix_Urunler_${grpName}_${new Date().toLocaleDateString('tr-TR').replace(/\./g,'-')}`);
+}
+
+function exportWasteExcel() {
+  const grpName = activeGroup ? (groups.find(g=>g.id===activeGroup)?.name || 'Grup') : 'Kisisel';
+  exportToExcel(getWasteExportProds(), `Rafix_Israf_${grpName}_${new Date().toLocaleDateString('tr-TR').replace(/\./g,'-')}`);
+}
+
+// ── PDF Export ────────────────────────────────────────────────────
+function exportToPDF(data, title, filename) {
+  if (!data.length) { showToast('Dışa aktarılacak veri yok.'); return; }
+
+  const headers = Object.keys(data[0]);
+  const rows    = data.map(r => headers.map(h => r[h]));
+  const grpName = activeGroup ? (groups.find(g=>g.id===activeGroup)?.name || '') : (me?.company_name || 'Kişisel');
+  const dateStr = new Date().toLocaleDateString('tr-TR', {day:'2-digit',month:'long',year:'numeric'});
+
+  // HTML → Print penceresi
+  const colW = Math.floor(100 / headers.length);
+  const tableRows = rows.map(row => `
+    <tr>${row.map((cell, ci) => {
+      let color = '';
+      if (headers[ci] === 'Durum') {
+        if (cell === 'Kritik') color = 'color:#C85A2A;font-weight:700';
+        else if (cell === 'Yaklaşıyor') color = 'color:#B45309;font-weight:700';
+        else if (cell === 'Geçmiş') color = 'color:#888';
+      }
+      return `<td style="${color}">${cell}</td>`;
+    }).join('')}</tr>
+  `).join('');
+
+  const html = `<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<title>${title}</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family: Arial, sans-serif; font-size: 11px; color: #1C1917; padding: 20px; }
+  .header { margin-bottom: 16px; border-bottom: 2px solid #C85A2A; padding-bottom: 12px; }
+  .logo { font-size: 22px; font-weight: 700; color: #C85A2A; letter-spacing: -0.5px; }
+  .report-title { font-size: 14px; font-weight: 600; color: #1C1917; margin-top: 4px; }
+  .meta { font-size: 10px; color: #78716C; margin-top: 2px; }
+  table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+  th { background: #1C1917; color: #fff; padding: 7px 8px; text-align: left; font-size: 10px; font-weight: 600; letter-spacing: 0.3px; }
+  td { padding: 6px 8px; border-bottom: 0.5px solid #E2D9CC; font-size: 10px; }
+  tr:nth-child(even) td { background: #FAF8F5; }
+  .footer { margin-top: 12px; font-size: 9px; color: #A8A29E; text-align: right; }
+  @media print { body { padding: 10px; } }
+</style>
+</head>
+<body>
+<div class="header">
+  <div class="logo">Rafix.</div>
+  <div class="report-title">${title}</div>
+  <div class="meta">${grpName} · ${dateStr} · Toplam ${rows.length} kayıt</div>
+</div>
+<table>
+  <thead><tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr></thead>
+  <tbody>${tableRows}</tbody>
+</table>
+<div class="footer">Rafix SKT Takip Sistemi · rafix.com.tr</div>
+</body>
+</html>`;
+
+  const win = window.open('', '_blank', 'width=900,height=700');
+  win.document.write(html);
+  win.document.close();
+  setTimeout(() => { win.print(); }, 500);
+  showToast('PDF hazırlanıyor…');
+}
+
+function exportStatsPDF() {
+  const grpName = activeGroup ? (groups.find(g=>g.id===activeGroup)?.name || 'Grup') : 'Kişisel';
+  exportToPDF(getExportProds(), `Ürün Listesi — ${grpName}`, 'Rafix_Urunler');
+}
+
+function exportWastePDF() {
+  const grpName = activeGroup ? (groups.find(g=>g.id===activeGroup)?.name || 'Grup') : 'Kişisel';
+  exportToPDF(getWasteExportProds(), `İsraf Raporu — ${grpName}`, 'Rafix_Israf');
+}
+
+</script>
 </head>
 <body>
 
@@ -549,6 +692,19 @@ input[type=number] { -moz-appearance:textfield; }
           <input type="date" id="skt-date-to"   onchange="setSktFilter('custom',null)" style="padding:5px 10px;border:1.5px solid var(--border);border-radius:40px;font-size:12px;background:var(--white);color:var(--dark);outline:none;font-family:var(--ff-sans)">
         </div>
       </div>
+      <!-- Export butonları -->
+      <div style="display:flex;gap:8px;margin-bottom:1rem;justify-content:flex-end">
+        <button onclick="exportStatsExcel()" style="padding:7px 14px;border:1.5px solid var(--border);border-radius:var(--rad);background:var(--white);color:var(--dark);font-size:12px;font-weight:600;font-family:var(--ff-sans);cursor:pointer;display:flex;align-items:center;gap:6px">
+          📊 Excel İndir
+        </button>
+        <button onclick="exportStatsPDF()" style="padding:7px 14px;border:none;border-radius:var(--rad);background:var(--accent);color:#fff;font-size:12px;font-weight:600;font-family:var(--ff-sans);cursor:pointer;display:flex;align-items:center;gap:6px">
+          📄 PDF İndir
+        </button>
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:1rem;justify-content:flex-end">
+        <button onclick="exportStatsExcel()" style="padding:7px 14px;border:1.5px solid var(--border);border-radius:var(--rad);background:var(--white);color:var(--dark);font-size:12px;font-weight:600;font-family:var(--ff-sans);cursor:pointer">📊 Excel İndir</button>
+        <button onclick="exportStatsPDF()" style="padding:7px 14px;border:none;border-radius:var(--rad);background:var(--accent);color:#fff;font-size:12px;font-weight:600;font-family:var(--ff-sans);cursor:pointer">📄 PDF İndir</button>
+      </div>
       <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:1.5rem" id="stats-big-cards"></div>
       <div class="stats-section">
         <div class="stats-section-title">Kategori Dağılımı</div>
@@ -567,6 +723,10 @@ input[type=number] { -moz-appearance:textfield; }
 
     <!-- İsraf Raporu Sayfası -->
     <div id="waste-page" style="display:none">
+      <div style="display:flex;justify-content:flex-end;gap:8px;margin-bottom:8px">
+        <button onclick="exportWasteExcel()" style="padding:7px 14px;border:1.5px solid var(--border);border-radius:var(--rad);background:var(--white);color:var(--dark);font-size:12px;font-weight:600;font-family:var(--ff-sans);cursor:pointer">📊 Excel</button>
+        <button onclick="exportWastePDF()" style="padding:7px 14px;border:none;border-radius:var(--rad);background:var(--accent);color:#fff;font-size:12px;font-weight:600;font-family:var(--ff-sans);cursor:pointer">📄 PDF</button>
+      </div>
       <div class="date-filter" style="margin-bottom:1.25rem">
         <button class="date-filter-btn active" onclick="setWasteFilter('all',this)">Tümü</button>
         <button class="date-filter-btn" onclick="setWasteFilter('7',this)">Son 7 gün</button>
