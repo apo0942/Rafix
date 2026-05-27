@@ -1327,6 +1327,26 @@ async function doLogin() {
   }
   showToast(`Hoş geldin, ${me.username}!`);
   checkNotificationsOnLoad();
+  // Her 5 dakikada plan değişikliğini kontrol et
+  startPlanWatcher();
+}
+
+function startPlanWatcher() {
+  // Sayfa açıkken her 5 dakikada bir plan bilgisini güncelle
+  setInterval(async () => {
+    if (!me?.id) return;
+    try {
+      const profile = await sb(`profiles?id=eq.${me.id}&select=plan`);
+      const newPlan = profile?.[0]?.plan || null;
+      if (newPlan !== me.plan) {
+        me.plan = newPlan;
+        sessionStorage.setItem('rafix_session', JSON.stringify(me));
+        console.log('[Rafix] Plan güncellendi:', newPlan);
+        render();
+        if (newPlan) showToast('🎉 Planınız güncellendi: ' + (getPlanLimits()?.label || newPlan));
+      }
+    } catch(e) {}
+  }, 5 * 60 * 1000); // 5 dakika
 }
 
 // ── Kayıt: kullanıcı adı + e-posta + şifre ────────────────────────
