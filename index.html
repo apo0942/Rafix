@@ -549,6 +549,163 @@ async function removeGlobalAdmin(userId) {
   }
 }
 
+
+// ── Ürün Geçmişi ──────────────────────────────────────────────────
+async function openProdHistory(prodId, prodName) {
+  document.getElementById('prod-history-name').textContent = prodName;
+  document.getElementById('prod-history-list').innerHTML =
+    '<div style="text-align:center;padding:2rem;color:var(--muted)">Yükleniyor…</div>';
+  openModal('prod-history-modal');
+
+  try {
+    // Ürün adına göre aktivite loglarını filtrele
+    const gid = activeGroup;
+    const logs = await sbWithRefresh(
+      `activity_logs?group_id=eq.${gid}&target_name=eq.${encodeURIComponent(prodName)}&order=created_at.desc&limit=30`
+    );
+
+    const el = document.getElementById('prod-history-list');
+    if (!logs?.length) {
+      el.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--muted)">Bu ürün için henüz kayıt yok.</div>';
+      return;
+    }
+
+    el.innerHTML = logs.map(l => {
+      const time = new Date(l.created_at).toLocaleDateString('tr-TR',{
+        day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit'
+      });
+      const actionIcon = l.action.includes('ekledi') ? '➕'
+        : l.action.includes('düzenledi') ? '✏️'
+        : l.action.includes('sildi') ? '🗑️' : '📋';
+
+      return `<div style="padding:12px 0;border-bottom:1px solid var(--border)">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+          <div style="display:flex;align-items:center;gap:8px">
+            <div style="width:28px;height:28px;border-radius:50%;background:var(--cream);display:flex;align-items:center;justify-content:center;font-size:13px">${actionIcon}</div>
+            <div>
+              <span style="font-size:13px;font-weight:600;color:var(--dark)">${l.user_name}</span>
+              <span style="font-size:12px;color:var(--muted);margin-left:4px">${l.action}</span>
+            </div>
+          </div>
+          <div style="font-size:11px;color:var(--muted);flex-shrink:0">${time}</div>
+        </div>
+        ${l.detail ? `<div style="margin-left:36px;font-size:11px;color:var(--muted);line-height:1.8;background:var(--cream);padding:6px 10px;border-radius:6px">
+          ${l.detail.split('·').map(d => d.trim()).filter(Boolean).map(d => `<div>• ${d}</div>`).join('')}
+        </div>` : ''}
+      </div>`;
+    }).join('');
+  } catch(e) {
+    document.getElementById('prod-history-list').innerHTML =
+      '<div style="text-align:center;padding:2rem;color:var(--danger)">Yüklenemedi.</div>';
+  }
+}
+
+
+// ── Toplu SKT Güncelleme ──────────────────────────────────────────
+let bulkMode = false;
+let selectedProds = new Set();
+
+function toggleBulkMode() {
+  bulkMode = !bulkMode;
+  selectedProds.clear();
+  const btn = document.getElementById('bulk-mode-btn');
+  if (btn) {
+    btn.textContent = bulkMode ? '✕ İptal' : '☑️ Toplu Seç';
+    btn.style.background   = bulkMode ? 'var(--accent)' : 'var(--white)';
+    btn.style.color        = bulkMode ? '#fff' : 'var(--muted)';
+    btn.style.borderColor  = bulkMode ? 'var(--accent)' : 'var(--border)';
+  }
+  render();
+}
+
+function toggleProdSelect(prodId) {
+  if (selectedProds.has(prodId)) selectedProds.delete(prodId);
+  else selectedProds.add(prodId);
+  // Seçim çubuğunu güncelle
+  updateBulkBar();
+}
+
+function updateBulkBar() {
+  let bar = document.getElementById('bulk-action-bar');
+  if (!bar) return;
+  if (selectedProds.size === 0) {
+    bar.style.display = 'none';
+  } else {
+    bar.style.display = 'flex';
+    document.getElementById('bulk-count').textContent = selectedProds.size + ' ürün seçildi';
+  }
+}
+
+function openBulkSKT() {
+  if (!selectedProds.size) { showToast('Önce ürün seçin.'); return; }
+  document.getElementById('bulk-skt-d').value = '';
+  document.getElementById('bulk-skt-m').value = '';
+  document.getElementById('bulk-skt-y').value = '';
+  openModal('bulk-skt-modal');
+}
+
+async function applyBulkSKT() {
+  const d = document.getElementById('bulk-skt-d').value.padStart(2,'0');
+  const m = document.getElementById('bulk-skt-m').value.padStart(2,'0');
+  const y = document.getElementById('bulk-skt-y').value;
+  if (!d || !m || !y || y.length !== 4) { showToast('Geçerli bir tarih girin.'); return; }
+  const expiry = `${y}-${m}-${d}`;
+
+  const btn = document.getElementById('bulk-skt-submit');
+  btn.disabled = true; btn.textContent = 'Güncelleniyor…';
+
+  let done = 0;
+  const gid = activeGroup || 'personal';
+  for (const prodId of selectedProds) {
+    try {
+      await sbWithRefresh(`products?id=eq.${prodId}`, { method:'PATCH', body:{ expiry } });
+      // Local cache güncelle
+      const idx = (prodMap[gid]||[]).findIndex(p=>p.id===prodId);
+      if (idx !== -1) prodMap[gid][idx].expiry = expiry;
+      done++;
+    } catch(e) { console.warn('Bulk SKT hatası:', prodId, e); }
+  }
+
+  closeModal('bulk-skt-modal');
+  showToast(`✅ ${done} ürünün SKT'si güncellendi.`);
+  selectedProds.clear();
+  bulkMode = false;
+  const modeBtn = document.getElementById('bulk-mode-btn');
+  if (modeBtn) { modeBtn.textContent = '☑️ Toplu Seç'; modeBtn.style.background='var(--white)'; modeBtn.style.color='var(--muted)'; modeBtn.style.borderColor='var(--border)'; }
+  btn.disabled = false; btn.textContent = 'Uygula';
+  render();
+}
+
+function selectAllProds() {
+  const gid = activeGroup || 'personal';
+  (prodMap[gid]||[]).forEach(p => selectedProds.add(p.id));
+  updateBulkBar();
+  render();
+}
+
+
+// ── Offline Modu ──────────────────────────────────────────────────
+let isOnline = navigator.onLine;
+
+function updateOnlineStatus() {
+  const wasOnline = isOnline;
+  isOnline = navigator.onLine;
+
+  const bar = document.getElementById('offline-bar');
+  if (bar) {
+    bar.style.display = isOnline ? 'none' : 'flex';
+  }
+
+  // Tekrar bağlandıysa veriyi yenile
+  if (!wasOnline && isOnline) {
+    showToast('🌐 İnternet bağlantısı yeniden sağlandı.');
+    if (me) loadAll().then(() => render()).catch(()=>{});
+  }
+}
+
+window.addEventListener('online',  updateOnlineStatus);
+window.addEventListener('offline', updateOnlineStatus);
+
 </script>
 </head>
 <body>
@@ -631,6 +788,11 @@ async function removeGlobalAdmin(userId) {
 </div>
 
 <!-- Main App -->
+<!-- Offline Bar -->
+<div id="offline-bar" style="display:none;position:fixed;top:0;left:0;right:0;z-index:9999;background:#374151;color:#fff;padding:8px 16px;font-size:13px;font-weight:600;align-items:center;justify-content:center;gap:8px">
+  📡 İnternet bağlantısı yok — Değişiklikler kaydedilemeyebilir
+</div>
+
 <div id="main-app" class="app" style="display:none">
   <aside class="sidebar">
     <div class="sidebar-logo">
@@ -723,7 +885,9 @@ async function removeGlobalAdmin(userId) {
       <button class="filter-pill" onclick="setFilter('ok',this)">🟢 Taze</button>
       <button class="filter-pill" onclick="setFilter('expired',this)">⬜ Geçmiş</button>
       <div class="filter-right">
-        <input class="search-input" id="search-input" placeholder="Ara…" oninput="render()">
+        <input class="search-input" id="search-input" placeholder="🔍 Ürün, marka, kategori, barkod…" oninput="render()" style="width:220px">
+        <button id="bulk-mode-btn" onclick="toggleBulkMode()" style="display:none;padding:6px 12px;border:1.5px solid var(--border);border-radius:40px;background:var(--white);color:var(--muted);font-size:12px;font-weight:600;font-family:var(--ff-sans);cursor:pointer">☑️ Toplu Seç</button>
+        <button id="bulk-mode-btn" onclick="toggleBulkMode()" style="display:none;padding:6px 12px;border:1.5px solid var(--border);border-radius:40px;background:var(--white);color:var(--muted);font-size:12px;font-weight:600;font-family:var(--ff-sans);cursor:pointer">☑️ Toplu Seç</button>
         <select class="sort-sel" id="sort-sel" onchange="render()">
           <option value="date-asc">En yakın SKT</option>
           <option value="date-desc">En uzak SKT</option>
@@ -1033,6 +1197,38 @@ async function removeGlobalAdmin(userId) {
   </div>
 </div>
 
+<!-- Product History Modal -->
+<div class="modal-overlay" id="prod-history-modal">
+  <div class="modal" style="max-width:480px">
+    <div class="modal-head">
+      <div>
+        <div class="modal-title">📋 Ürün Geçmişi</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:2px" id="prod-history-name"></div>
+      </div>
+      <button class="modal-close" onclick="closeModal('prod-history-modal')">✕</button>
+    </div>
+    <div id="prod-history-list" style="max-height:400px;overflow-y:auto">
+      <div style="text-align:center;padding:2rem;color:var(--muted)">Yükleniyor…</div>
+    </div>
+  </div>
+</div>
+
+<!-- Product History Modal -->
+<div class="modal-overlay" id="prod-history-modal">
+  <div class="modal" style="max-width:480px">
+    <div class="modal-head">
+      <div>
+        <div class="modal-title">📋 Ürün Geçmişi</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:2px" id="prod-history-name"></div>
+      </div>
+      <button class="modal-close" onclick="closeModal('prod-history-modal')">✕</button>
+    </div>
+    <div id="prod-history-list" style="max-height:400px;overflow-y:auto">
+      <div style="text-align:center;padding:2rem;color:var(--muted)">Yükleniyor…</div>
+    </div>
+  </div>
+</div>
+
 <!-- Product Notes Modal -->
 <div class="modal-overlay" id="notes-modal">
   <div class="modal" style="max-width:420px">
@@ -1244,6 +1440,33 @@ async function removeGlobalAdmin(userId) {
       <div style="font-size:15px;font-weight:600;color:var(--dark)" id="import-done-text"></div>
       <button onclick="closeImportModal()" style="margin-top:1.5rem;padding:10px 24px;background:var(--accent);color:#fff;border:none;border-radius:40px;font-size:14px;font-weight:600;font-family:var(--ff-sans);cursor:pointer">Tamam</button>
     </div>
+  </div>
+</div>
+
+<!-- Bulk Action Bar -->
+<div id="bulk-action-bar" style="display:none;position:fixed;bottom:1.5rem;left:50%;transform:translateX(-50%);background:var(--dark);color:#fff;border-radius:40px;padding:10px 20px;gap:12px;align-items:center;z-index:400;box-shadow:0 4px 20px rgba(0,0,0,0.3);font-size:13px">
+  <span id="bulk-count" style="font-weight:600"></span>
+  <button onclick="selectAllProds()" style="padding:5px 12px;border-radius:20px;border:1px solid rgba(255,255,255,0.3);background:rgba(255,255,255,0.1);color:#fff;font-size:12px;font-family:var(--ff-sans);cursor:pointer">Tümünü Seç</button>
+  <button onclick="openBulkSKT()" style="padding:5px 14px;border-radius:20px;border:none;background:var(--accent);color:#fff;font-size:12px;font-weight:600;font-family:var(--ff-sans);cursor:pointer">📅 SKT Güncelle</button>
+  <button onclick="toggleBulkMode()" style="padding:5px 10px;border-radius:20px;border:1px solid rgba(255,255,255,0.2);background:none;color:rgba(255,255,255,0.6);font-size:12px;font-family:var(--ff-sans);cursor:pointer">✕</button>
+</div>
+
+<!-- Bulk SKT Modal -->
+<div class="modal-overlay" id="bulk-skt-modal">
+  <div class="modal" style="max-width:320px;text-align:center">
+    <div class="modal-head">
+      <div class="modal-title">📅 Toplu SKT Güncelle</div>
+      <button class="modal-close" onclick="closeModal('bulk-skt-modal')">✕</button>
+    </div>
+    <p style="font-size:13px;color:var(--muted);margin-bottom:1.2rem" id="bulk-skt-desc">Seçili ürünlerin son kullanma tarihini güncelle</p>
+    <div style="display:flex;align-items:center;border:1.5px solid var(--border);border-radius:var(--rad);background:var(--white);padding:11px 16px;gap:0;margin-bottom:1.2rem">
+      <input id="bulk-skt-d" type="text" inputmode="numeric" maxlength="2" placeholder="GG" style="flex:1;border:none;outline:none;font-size:18px;font-weight:600;background:transparent;color:var(--dark);font-family:var(--ff-sans);text-align:center;min-width:0">
+      <span style="color:var(--border);font-size:20px;flex-shrink:0;padding:0 4px">/</span>
+      <input id="bulk-skt-m" type="text" inputmode="numeric" maxlength="2" placeholder="AA" style="flex:1;border:none;outline:none;font-size:18px;font-weight:600;background:transparent;color:var(--dark);font-family:var(--ff-sans);text-align:center;min-width:0">
+      <span style="color:var(--border);font-size:20px;flex-shrink:0;padding:0 4px">/</span>
+      <input id="bulk-skt-y" type="text" inputmode="numeric" maxlength="4" placeholder="YYYY" style="flex:2;border:none;outline:none;font-size:18px;font-weight:600;background:transparent;color:var(--dark);font-family:var(--ff-sans);text-align:center;min-width:0">
+    </div>
+    <button id="bulk-skt-submit" class="modal-submit" onclick="applyBulkSKT()">Uygula</button>
   </div>
 </div>
 
@@ -1941,9 +2164,22 @@ function render() {
 
   let list = [...(prodMap[gid] || [])];
   if (activeFilter !== 'all') list = list.filter(p => getStatus(daysLeft(p.expiry)) === activeFilter);
-  if (search) list = list.filter(p =>
-    p.name.toLowerCase().includes(search) || (p.brand||'').toLowerCase().includes(search) || (p.category||'').toLowerCase().includes(search)
-  );
+  const normalize = s => (s||'').toLowerCase()
+    .replace(/ı/g,'i').replace(/İ/g,'i').replace(/ş/g,'s').replace(/Ş/g,'s')
+    .replace(/ğ/g,'g').replace(/Ğ/g,'g').replace(/ü/g,'u').replace(/Ü/g,'u')
+    .replace(/ö/g,'o').replace(/Ö/g,'o').replace(/ç/g,'c').replace(/Ç/g,'c');
+
+  if (search) {
+    const q = normalize(search);
+    list = list.filter(p =>
+      normalize(p.name).includes(q) ||
+      normalize(p.brand).includes(q) ||
+      normalize(p.category).includes(q) ||
+      normalize(p.note).includes(q) ||
+      normalize(p.qty).includes(q) ||
+      (p.barcode||'').includes(search)
+    );
+  }
   list.sort((a,b) =>
     sort==='date-asc'  ? new Date(a.expiry)-new Date(b.expiry) :
     sort==='date-desc' ? new Date(b.expiry)-new Date(a.expiry) :
@@ -1986,8 +2222,13 @@ function render() {
     const cfg = STATUS_CFG[s];
     const txt = d < 0 ? `${Math.abs(d)} gün önce geçti` : d===0 ? 'Bugün!' : d===1 ? 'Yarın' : `${d} gün kaldı`;
     const pct = d <= 0 ? 0 : Math.min(100, Math.round(d / 365 * 100));
-    return `<div class="prod-card ${cfg.cls}" style="animation-delay:${idx*0.03}s">
-      ${p.image ? `<img src="${p.image}" onclick="window.open(this.src,'_blank')" style="width:100%;height:100px;object-fit:cover;border-radius:8px;margin-bottom:10px;cursor:pointer">` : ''}
+    const isSelected = bulkMode && selectedProds.has(p.id);
+    return `<div class="prod-card ${cfg.cls}" style="animation-delay:${idx*0.03}s;${isSelected?'outline:2px solid var(--accent);outline-offset:1px;':''}">
+      ${bulkMode ? `<label style="position:absolute;top:10px;left:10px;z-index:10;cursor:pointer">
+      <input type="checkbox" ${selectedProds.has(p.id)?'checked':''} onchange="toggleProdSelect('${p.id}')"
+        style="width:18px;height:18px;accent-color:var(--accent);cursor:pointer">
+    </label>` : ''}
+    ${p.image ? `<img src="${p.image}" onclick="window.open(this.src,'_blank')" style="width:100%;height:100px;object-fit:cover;border-radius:8px;margin-bottom:10px;cursor:pointer">` : ''}
       <div class="prod-cat">${CAT_EMOJI[p.category]||'📦'} ${p.category}</div>
       <div class="prod-name">${p.name}</div>
       <div class="prod-meta">${p.brand||'—'}${p.qty ? ' · '+p.qty : ''}</div>
@@ -2084,18 +2325,31 @@ async function saveProd() {
 
   try {
     if (editingProdId) {
+      // Değişiklikleri tespit et
+      const oldProd = (prodMap[gid]||[]).find(p => p.id === editingProdId);
+      const changes = [];
+      if (oldProd) {
+        if (oldProd.name     !== body.name)     changes.push(`Ad: "${oldProd.name}" → "${body.name}"`);
+        if (oldProd.brand    !== body.brand)    changes.push(`Marka: "${oldProd.brand||'-'}" → "${body.brand||'-'}"`);
+        if (oldProd.category !== body.category) changes.push(`Kategori: "${oldProd.category||'-'}" → "${body.category||'-'}"`);
+        if (oldProd.expiry   !== body.expiry)   changes.push(`SKT: "${formatDateTR(oldProd.expiry)}" → "${formatDateTR(body.expiry)}"`);
+        if (oldProd.qty      !== body.qty)      changes.push(`Miktar: "${oldProd.qty||'-'}" → "${body.qty||'-'}"`);
+        if (oldProd.note     !== body.note)     changes.push(`Not: "${oldProd.note||'-'}" → "${body.note||'-'}"`);
+      }
       await sb(`products?id=eq.${editingProdId}`, { method:'PATCH', body });
       prodMap[gid] = prodMap[gid].map(p => p.id===editingProdId ? {...p, ...normalizeProduct({...body, id:editingProdId})} : p);
+      closeProdModal();
+      render();
+      await logActivity(gid === 'personal' ? null : gid, 'ürünü düzenledi', name, changes.join(' · '));
+      showToast('Ürün güncellendi ✓');
     } else {
       const [np] = await sb('products?select=*', { method:'POST', prefer:'return=representation', body });
       prodMap[gid] = [normalizeProduct(np), ...(prodMap[gid]||[])];
+      closeProdModal();
+      render();
+      await logActivity(gid === 'personal' ? null : gid, 'ürün ekledi', name, `Kategori: ${body.category||'-'} · SKT: ${formatDateTR(body.expiry)}`);
+      showToast('Ürün eklendi ✓');
     }
-    closeProdModal();
-    render();
-    const action = editingProdId ? 'ürünü düzenledi' : 'ürün ekledi';
-    await logActivity(gid === 'personal' ? null : gid, action, name);
-    showToast(editingProdId ? 'Ürün güncellendi ✓' : 'Ürün eklendi ✓');
-
     // Barkod varsa → Rafix DB'ye sessizce kaydet (kullanıcıya sormadan)
     const barcode = document.getElementById('f-barcode')?.value?.trim();
     if (barcode && name && !editingProdId) {
@@ -2809,6 +3063,14 @@ async function refreshToken() {
 
 // JWT expired hatası alınca otomatik yenile ve tekrar dene
 async function sbWithRefresh(path, opts={}) {
+  if (!navigator.onLine) {
+  if (!navigator.onLine) {
+    console.warn('[Rafix] Offline — istek atlanıyor:', path);
+    return (opts.method && opts.method !== 'GET') ? null : [];
+  }
+    console.warn('[Rafix] Offline — istek atlanıyor:', path);
+    return opts.method && opts.method !== 'GET' ? null : [];
+  }
   try {
     return await sb(path, opts);
   } catch(e) {
@@ -3247,12 +3509,19 @@ function renderWaste() {
 }
 
 // ── Activity Log ──────────────────────────────────────────────────
-async function logActivity(groupId, action, targetName) {
+async function logActivity(groupId, action, targetName, detail = '') {
   if (!groupId || groupId === 'personal') return;
   try {
     await sbWithRefresh('activity_logs', {
       method: 'POST',
-      body: { group_id: groupId, user_id: me.id, user_name: me.username, action, target_name: targetName }
+      body: {
+        group_id:    groupId,
+        user_id:     me.id,
+        user_name:   me.full_name || me.username,
+        action,
+        target_name: targetName,
+        detail:      detail || null,
+      }
     });
   } catch(e) { console.warn('Activity log failed', e); }
 }
@@ -3271,10 +3540,13 @@ async function openActivityModal() {
     }
     document.getElementById('activity-list').innerHTML = logs.map(l => {
       const time = new Date(l.created_at).toLocaleDateString('tr-TR',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});
-      return `<div class="activity-item">
-        <div class="activity-avatar">${(l.user_name||'?')[0].toUpperCase()}</div>
-        <div class="activity-text"><strong>${l.user_name}</strong> ${l.action}${l.target_name?' — <em>'+l.target_name+'</em>':''}</div>
-        <div class="activity-time">${time}</div>
+      return `<div class="activity-item" style="flex-direction:column;align-items:flex-start;gap:4px">
+        <div style="display:flex;align-items:center;gap:8px;width:100%">
+          <div class="activity-avatar">${(l.user_name||'?')[0].toUpperCase()}</div>
+          <div class="activity-text" style="flex:1"><strong>${l.user_name}</strong> ${l.action}${l.target_name?' — <em>'+l.target_name+'</em>':''}</div>
+          <div class="activity-time">${time}</div>
+        </div>
+        ${l.detail ? `<div style="margin-left:40px;font-size:11px;color:var(--muted);line-height:1.6;background:var(--cream);padding:5px 8px;border-radius:6px;width:calc(100% - 40px);box-sizing:border-box">${l.detail.replace(/·/g,'<br>')}</div>` : ''}
       </div>`;
     }).join('');
   } catch(e) {
@@ -3334,7 +3606,7 @@ async function addNote() {
 function openModal(id)  { document.getElementById(id).classList.add('open'); }
 function closeModal(id) { document.getElementById(id).classList.remove('open'); }
 
-['prod-modal','newgroup-modal','group-modal','activity-modal','notes-modal','settings-modal','upgrade-modal','import-modal'].forEach(id => {
+['prod-modal','newgroup-modal','group-modal','activity-modal','notes-modal','settings-modal','upgrade-modal','import-modal','prod-history-modal','bulk-skt-modal'].forEach(id => {
   document.getElementById(id).addEventListener('click', function(e) {
     if (e.target === this) this.classList.remove('open');
   });
