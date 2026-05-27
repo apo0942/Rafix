@@ -2059,12 +2059,15 @@ function openGroupModal() {
 
 function setGmTab(t) {
   gmTab = t;
-  document.getElementById('gm-tab-members').classList.toggle('active', t==='members');
+  document.getElementById('gm-tab-members').classList.toggle('active',  t==='members');
+  document.getElementById('gm-tab-roles').classList.toggle('active',    t==='roles');
   document.getElementById('gm-tab-settings').classList.toggle('active', t==='settings');
   document.getElementById('gm-members-panel').style.display  = t==='members'  ? '' : 'none';
+  document.getElementById('gm-roles-panel').style.display    = t==='roles'    ? '' : 'none';
   document.getElementById('gm-settings-panel').style.display = t==='settings' ? '' : 'none';
-  if (t==='members') renderGmMembers();
-  else renderGmSettings();
+  if (t==='members')       renderGmMembers();
+  else if (t==='roles')    renderGmRoles();
+  else                     renderGmSettings();
 }
 
 function renderGmMembers() {
@@ -2452,10 +2455,11 @@ function openSettings() {
 }
 
 function setStTab(t) {
-  ['profile','notif','danger'].forEach(x => {
+  ['profile','notif','display','danger'].forEach(x => {
     document.getElementById('st-tab-'+x).classList.toggle('active', x===t);
     document.getElementById('st-'+x).style.display = x===t ? '' : 'none';
   });
+  if (t === 'display') updateThemeChecks();
 }
 
 async function updateUsername() {
