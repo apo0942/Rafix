@@ -2213,10 +2213,34 @@ async function saveNewGroup() {
     ng.members = [{ group_id: ng.id, user_id: me.id, role: 'owner' }];
     groups.push(ng);
     prodMap[ng.id] = [];
+
+    // Kurumsal hesapta varsayılan rol isimleri otomatik ata
+    if (me?.account_type === 'kurumsal') {
+      const defaultLabels = [
+        { role_key: 'owner',  custom_label: 'Genel Müdür' },
+        { role_key: 'admin',  custom_label: 'Merkez Yönetici' },
+        { role_key: 'editor', custom_label: 'Depo Görevlisi' },
+        { role_key: 'staff',  custom_label: 'Raf Görevlisi' },
+        { role_key: 'viewer', custom_label: 'Kasiyer' },
+      ];
+      // Cache'e ekle
+      groupRoleLabels[ng.id] = {};
+      defaultLabels.forEach(l => { groupRoleLabels[ng.id][l.role_key] = l.custom_label; });
+      // Supabase'e kaydet (arka planda)
+      Promise.all(defaultLabels.map(l =>
+        sb('role_labels', {
+          method: 'POST',
+          prefer: 'return=minimal',
+          headers: { 'Prefer': 'resolution=merge-duplicates' },
+          body: { group_id: ng.id, ...l }
+        }).catch(()=>{})
+      ));
+    }
+
     closeModal('newgroup-modal');
     renderSidebar();
     setActive(ng.id);
-    const label = me?.account_type === 'kurumsal' ? 'Grup / Şube oluşturuldu ✓' : 'Grup oluşturuldu ✓';
+    const label = me?.account_type === 'kurumsal' ? 'Şube oluşturuldu ✓' : 'Grup oluşturuldu ✓';
     showToast(label);
   } catch(e) { showToast('Grup hatası: ' + (e.message||'').slice(0,80)); console.error(e); }
 }
