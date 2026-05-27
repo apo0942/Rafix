@@ -347,6 +347,12 @@ input[type=number] { -moz-appearance:textfield; }
         <input id="auth-username" type="text" placeholder="kullanıcı_adı veya e-posta" onkeydown="if(event.key==='Enter')doAuth()">
       </div>
 
+      <!-- Ad Soyad — sadece kayıtta -->
+      <div class="field" id="field-fullname" style="display:none">
+        <label>Ad Soyad</label>
+        <input id="auth-fullname" type="text" placeholder="Adınız Soyadınız" onkeydown="if(event.key==='Enter')doAuth()">
+      </div>
+
       <!-- E-posta — sadece kayıtta ve şifre sıfırlamada -->
       <div class="field" id="field-email" style="display:none">
         <label>E-posta</label>
@@ -1192,6 +1198,7 @@ function setAuthMode(m) {
   document.getElementById('auth-username').placeholder    = m==='login' ? 'kullanıcı_adı veya e-posta' : 'kullanıcı_adı';
 
   // field-email: sadece kayıt ve şifre sıfırlama
+  document.getElementById('field-fullname').style.display     = m==='register' ? '' : 'none';
   document.getElementById('field-email').style.display        = (m==='register'||m==='reset') ? '' : 'none';
   document.getElementById('field-account-type').style.display = m==='register' ? '' : 'none';
   document.getElementById('field-company').style.display      = 'none'; // şirket sadece kurumsal seçince açılır
@@ -1258,12 +1265,13 @@ async function doLogin() {
 
   // Profil bilgilerini çek (is_admin + account_type + company_name)
   try {
-    const profile = await sb(`profiles?id=eq.${me.id}&select=is_admin,account_type,company_name,plan`);
+    const profile = await sb(`profiles?id=eq.${me.id}&select=is_admin,account_type,company_name,plan,full_name`);
     if (profile?.[0]) {
       me.is_admin      = profile[0].is_admin      || false;
       me.account_type  = profile[0].account_type  || 'bireysel';
       me.company_name  = profile[0].company_name  || null;
-      me.plan          = profile[0].plan          || null; // ödeme sonrası set edilir
+      me.plan          = profile[0].plan          || null;
+      me.full_name     = profile[0].full_name      || null;
       if (me.is_admin)     console.log('[Rafix] Admin modu aktif ✓');
       if (me.account_type === 'kurumsal') console.log('[Rafix] Kurumsal hesap:', me.company_name);
     }
@@ -1343,12 +1351,13 @@ function setAccountType(type) {
 
 async function doRegister() {
   const username    = document.getElementById('auth-username').value.trim();
+  const fullname    = document.getElementById('auth-fullname').value.trim();
   const email       = document.getElementById('auth-email').value.trim();
   const pass        = document.getElementById('auth-password').value.trim();
   const accountType = selectedAccountType;
   const company     = document.getElementById('auth-company')?.value.trim() || '';
 
-  if (!username || !email || !pass) { showToast('Lütfen tüm alanları doldurun.'); return; }
+  if (!username || !fullname || !email || !pass) { showToast('Lütfen tüm alanları doldurun.'); return; }
   if (pass.length < 6) { showToast('Şifre en az 6 karakter olmalı.'); return; }
   if (accountType === 'kurumsal' && !company) { showToast('Şirket / market adını girin.'); return; }
 
@@ -1359,7 +1368,7 @@ async function doRegister() {
   // Supabase Auth ile kayıt
   const data = await sbAuth('signup', {
     email, password: pass,
-    data: { username, account_type: accountType, company_name: company }
+    data: { username, full_name: fullname, account_type: accountType, company_name: company }
   });
 
   // profiles tablosuna kaydet
@@ -1369,6 +1378,7 @@ async function doRegister() {
     body: {
       id:           data.user.id,
       username,
+      full_name:    fullname,
       email,
       account_type: accountType,
       company_name: company || null,
@@ -2075,7 +2085,7 @@ function renderGmMembers() {
   const myR = grp.myRole || 'viewer';
   const canManage = ROLES[myR]?.canManage;
   document.getElementById('gm-title').textContent = grp.name;
-  document.getElementById('gm-sub').textContent = `${grp.members?.length||0} üye · Rolünüz: ${roleLabel(myR)}`;
+  document.getElementById('gm-sub').textContent = `${grp.members?.length||0} üye · Rolünüz: ${getGroupRoleLabel(grp.id, myR)}`;
 
   let html = (grp.members||[]).map(m => {
     const u = users.find(x=>x.id===m.user_id);
@@ -2118,6 +2128,46 @@ function renderGmMembers() {
 
 // ── Rol İzinleri Sistemi ─────────────────────────────────────────
 
+// Grup bazlı özel rol isimleri cache — { groupId: { roleKey: customLabel } }
+const groupRoleLabels = {};
+
+// Grup bazlı özel rol isimlerini yükle
+async function loadRoleLabels(groupId) {
+  if (groupRoleLabels[groupId]) return;
+  try {
+    const rows = await sb(`role_labels?group_id=eq.${groupId}&select=role_key,custom_label`);
+    groupRoleLabels[groupId] = {};
+    (rows || []).forEach(r => { groupRoleLabels[groupId][r.role_key] = r.custom_label; });
+  } catch(e) { console.warn('Rol isimleri yüklenemedi:', e); }
+}
+
+// Bir grup için rol etiketini al — özel isim varsa onu, yoksa default
+function getGroupRoleLabel(groupId, roleKey) {
+  if (me?.account_type === 'kurumsal' && groupId && groupRoleLabels[groupId]?.[roleKey]) {
+    return groupRoleLabels[groupId][roleKey];
+  }
+  return roleLabel(roleKey);
+}
+
+// Grup bazlı özel rol isimleri cache — { groupId: { roleKey: customLabel } }
+const groupRoleLabels = {};
+
+async function loadRoleLabels(groupId) {
+  if (groupRoleLabels[groupId]) return;
+  try {
+    const rows = await sb(`role_labels?group_id=eq.${groupId}&select=role_key,custom_label`);
+    groupRoleLabels[groupId] = {};
+    (rows || []).forEach(r => { groupRoleLabels[groupId][r.role_key] = r.custom_label; });
+  } catch(e) { console.warn('Rol isimleri yüklenemedi:', e); }
+}
+
+function getGroupRoleLabel(groupId, roleKey) {
+  if (me?.account_type === 'kurumsal' && groupId && groupRoleLabels[groupId]?.[roleKey]) {
+    return groupRoleLabels[groupId][roleKey];
+  }
+  return roleLabel(roleKey);
+}
+
 // Grup bazlı özel izinler cache — { groupId: { roleName: {canAdd,canEdit,...} } }
 const groupRolePerms = {};
 
@@ -2151,7 +2201,9 @@ function renderGmRoles() {
   const grp = groups.find(g => g.id === activeGroup);
   if (!grp) return;
   const isOwner   = grp.myRole === 'owner';
-  const canManage = getRolePerms(grp.id, grp.myRole).canManage || grp.myRole === 'owner';
+  // Şube Müdürü (owner) ve Merkez Yönetici (admin) rol izinlerini düzenleyebilir
+  const canManage = grp.myRole === 'owner' || grp.myRole === 'admin'
+    || getRolePerms(grp.id, grp.myRole).canManage;
 
   if (!canManage) {
     document.getElementById('gm-roles-panel').innerHTML =
@@ -2160,42 +2212,49 @@ function renderGmRoles() {
   }
 
   const editableRoles = [
-    { key: 'admin',  label: roleLabel('admin') },
-    { key: 'editor', label: roleLabel('editor') },
-    { key: 'viewer', label: roleLabel('viewer') },
+    { key: 'owner',  label: getGroupRoleLabel(grp.id, 'owner') },
+    { key: 'admin',  label: getGroupRoleLabel(grp.id, 'admin') },
+    { key: 'editor', label: getGroupRoleLabel(grp.id, 'editor') },
+    { key: 'staff',  label: getGroupRoleLabel(grp.id, 'staff') },
+    { key: 'viewer', label: getGroupRoleLabel(grp.id, 'viewer') },
   ];
 
   const permsConfig = [
-    { key: 'canAdd',    label: 'Ürün Ekle',    icon: '➕' },
-    { key: 'canEdit',   label: 'Ürün Düzenle', icon: '✏️' },
-    { key: 'canDelete', label: 'Ürün Sil',     icon: '🗑️' },
-    { key: 'canManage', label: 'Üye Yönet',    icon: '👥' },
+    { key: 'canAdd',    label: 'Urun Ekle',    icon: '+' },
+    { key: 'canEdit',   label: 'Urun Duzenle', icon: '/' },
+    { key: 'canDelete', label: 'Urun Sil',     icon: 'x' },
+    { key: 'canManage', label: 'Uye Yonet',    icon: '@' },
   ];
 
   let html = `<div style="margin-bottom:12px;font-size:12px;color:var(--muted);background:var(--cream);padding:10px 12px;border-radius:var(--rad);line-height:1.5">
-    💡 Her rol için izinleri özelleştir. Değişiklikler bu gruba özeldir.
+    Rol isimlerini ve izinlerini ozellestir. Degisiklikler sadece bu gruba ozeldir.
   </div>`;
 
   editableRoles.forEach(({ key: rk, label: rl }) => {
-    const perms = getRolePerms(grp.id, rk);
-    const color = ROLES[rk]?.color || '#888';
+    const perms       = getRolePerms(grp.id, rk);
+    const color       = ROLES[rk]?.color || '#888';
+    const defaultLbl  = roleLabel(rk);
+    const customLbl   = groupRoleLabels[grp.id]?.[rk] || '';
+    const isOwnerRole = rk === 'owner';
 
     html += `<div style="border:1.5px solid var(--border);border-radius:var(--rad);padding:12px 14px;margin-bottom:10px">
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap">
         <div style="width:10px;height:10px;border-radius:50%;background:${color};flex-shrink:0"></div>
-        <div style="font-size:14px;font-weight:700;color:var(--dark)">${rl}</div>
+        <input type="text" value="${customLbl}" placeholder="${defaultLbl}"
+          onchange="updateRoleLabel('${grp.id}','${rk}',this.value.trim())"
+          style="flex:1;min-width:120px;border:1px solid var(--border);border-radius:6px;padding:5px 9px;font-size:13px;font-weight:600;color:var(--dark);background:var(--white);font-family:var(--ff-sans);outline:none">
+        <span style="font-size:11px;color:var(--muted);flex-shrink:0">varsayilan: ${defaultLbl}</span>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">`;
 
-    permsConfig.forEach(({ key: pk, label: pl, icon }) => {
-      const checked = perms[pk] ? 'checked' : '';
-      // owner her zaman tam yetki — disable
-      const disabled = rk === 'owner' ? 'disabled' : '';
+    permsConfig.forEach(({ key: pk, label: pl }) => {
+      const checked  = perms[pk] ? 'checked' : '';
+      const disabled = isOwnerRole ? 'disabled' : '';
       html += `<label style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--white);border:1.5px solid var(--border);border-radius:8px;cursor:${disabled?'default':'pointer'};opacity:${disabled?'0.5':'1'}">
         <input type="checkbox" ${checked} ${disabled}
           onchange="updateRolePerm('${grp.id}','${rk}','${pk}',this.checked)"
           style="width:16px;height:16px;accent-color:var(--accent);flex-shrink:0">
-        <span style="font-size:13px;color:var(--dark)">${icon} ${pl}</span>
+        <span style="font-size:13px;color:var(--dark)">${pl}</span>
       </label>`;
     });
 
@@ -2203,6 +2262,40 @@ function renderGmRoles() {
   });
 
   document.getElementById('gm-roles-panel').innerHTML = html;
+}
+
+// Rol ismini guncelle
+async function updateRoleLabel(groupId, roleKey, newLabel) {
+  if (!groupRoleLabels[groupId]) groupRoleLabels[groupId] = {};
+
+  if (!newLabel) {
+    // Bos birakildiysa ozel ismi sil
+    delete groupRoleLabels[groupId][roleKey];
+    try {
+      await sb(`role_labels?group_id=eq.${groupId}&role_key=eq.${roleKey}`, { method: 'DELETE' });
+      showToast('Rol ismi varsayilana dondu.');
+    } catch(e) { console.warn('Rol ismi silme hatasi:', e); }
+  } else {
+    groupRoleLabels[groupId][roleKey] = newLabel;
+    try {
+      await sb('role_labels', {
+        method: 'POST',
+        prefer: 'return=minimal',
+        headers: { 'Prefer': 'resolution=merge-duplicates' },
+        body: { group_id: groupId, role_key: roleKey, custom_label: newLabel }
+      });
+      showToast('Rol ismi guncellendi: ' + newLabel);
+      // Uye listesini ve sidebar'i guncelle
+      renderGmMembers();
+      renderSidebar();
+    } catch(e) {
+      showToast('Hata: ' + e.message.slice(0,60));
+      console.error(e);
+    }
+  }
+}
+
+// Tek bir izni guncelle (eski fonksiyon devam ediyor)
 }
 
 // Tek bir izni güncelle
